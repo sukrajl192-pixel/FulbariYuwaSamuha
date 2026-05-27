@@ -89,10 +89,10 @@ const T = {
     loanAmount:"ऋण रकम",principalPaid:"साँवा भुक्तानी",interestPaid:"ब्याज भुक्तानी",
     lateFee:"ढिलाई शुल्क",totalPaid:"कुल भुक्तानी",remaining:"बाँकी",signature:"दस्तखत",
     name:"पूरा नाम",role:"भूमिका",username:"प्रयोगकर्ता नाम",password:"पासवर्ड",
-    login:"प्रवेश गर्नुहोस्",confirmDelete:"यो प्रविष्टि हटाउने?",pdf:"PDF",csv:"CSV",
+    login:"प्रवेश गर्नुहोस्",confirmDelete:"यो प्रविष्टि हटाउने?",pdf:"डाउनलोड",csv:"CSV",
     category:"श्रेणी",addCategory:"नयाँ श्रेणी थप्नुहोस्",
     monthlyReport:"मासिक प्रतिवेदन",yearlyReport:"वार्षिक प्रतिवेदन",
-    print:"मुद्रण गर्नुहोस्",recentActivity:"📋 हालका बचत गतिविधि",
+    print:"डाउनलोड गर्नुहोस्",recentActivity:"📋 हालका बचत गतिविधि",
     changeUsername:"प्रयोगकर्ता नाम परिवर्तन",changePassword:"पासवर्ड परिवर्तन",
     currentPassword:"हालको पासवर्ड",newPassword:"नयाँ पासवर्ड",
     bsLabel:"वि.सं.",adLabel:"ई.सं.",interestIncome:"ब्याज आम्दानी",
@@ -127,10 +127,10 @@ const T = {
     loanAmount:"Loan Amount",principalPaid:"Principal Paid",interestPaid:"Interest Paid",
     lateFee:"Late Fee",totalPaid:"Total Paid",remaining:"Remaining",signature:"Signature",
     name:"Full Name",role:"Role",username:"Username",password:"Password",
-    login:"Login",confirmDelete:"Delete this entry?",pdf:"PDF",csv:"CSV",
+    login:"Login",confirmDelete:"Delete this entry?",pdf:"Download",csv:"CSV",
     category:"Category",addCategory:"Add New Category",
     monthlyReport:"Monthly Report",yearlyReport:"Yearly Report",
-    print:"Print",recentActivity:"📋 Recent Activity",
+    print:"Download",recentActivity:"📋 Recent Activity",
     changeUsername:"Change Username",changePassword:"Change Password",
     currentPassword:"Current Password",newPassword:"New Password",
     bsLabel:"BS",adLabel:"AD",interestIncome:"Interest Income",
@@ -152,66 +152,280 @@ const T = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 3: STORAGE HOOK
+// SECTION 3: STORAGE SYSTEM — permanent, update-safe, migration-aware
 // ═══════════════════════════════════════════════════════════════════════════════
+
+
+// App data version — bump this when schema changes require migration
+const DATA_VERSION = "2.1.0";
+const STORAGE_KEYS = {
+  version:    "fys_data_version",
+  users:      "fys_users",
+  members:    "fys_members",
+  savings:    "fys_savings",
+  loans:      "fys_loans",
+  cash:       "fys_cash",
+  bank:       "fys_bank",
+  ie:         "fys_ie",
+  categories: "fys_categories",
+  catLabels:  "fys_cat_labels",   // ← all category label strings in one key
+  session:    "fys_session",
+  lang:       "fys_lang",
+};
+
+// Safe localStorage read — never throws, returns null on any error
+function lsGet(key) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
+  catch { return null; }
+}
+// Safe localStorage write — never throws
+function lsSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+// Safe raw localStorage read (no JSON.parse)
+function lsGetRaw(key) {
+  try { return localStorage.getItem(key) || ""; } catch { return ""; }
+}
+function lsSetRaw(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+// ── Category label helpers (store all labels in one JSON key) ─────────────────
+function getCatLabels() {
+  return lsGet(STORAGE_KEYS.catLabels) || {};
+}
+function setCatLabel(k, v) {
+  const all = getCatLabels();
+  all[k] = v;
+  lsSet(STORAGE_KEYS.catLabels, all);
+  // Also keep the legacy per-key format for backward compat
+  try { localStorage.setItem("fys_catlbl_" + k, v); } catch {}
+}
+function getCatLabel(k) {
+  const all = getCatLabels();
+  if (all[k]) return all[k];
+  // Fallback: legacy per-key
+  try { return localStorage.getItem("fys_catlbl_" + k) || ""; } catch { return ""; }
+}
+
+// useStore: reads from localStorage first; falls back to seed only if key missing.
+// The save() function returned updates BOTH React state AND localStorage atomically.
+// Keys never change between app versions, so data survives updates.
 function useStore(key, seed) {
   const [data, setData] = useState(() => {
-    try { const r=localStorage.getItem(key); return r?JSON.parse(r):seed; } catch { return seed; }
+    const saved = lsGet(key);
+    if (saved !== null) return saved;   // ← real user data, use it
+    lsSet(key, seed);                   // ← first ever load, persist seed immediately
+    return seed;
   });
-  const save = useCallback((d) => {
-    setData(d);
-    try { localStorage.setItem(key, JSON.stringify(d)); } catch {}
+  const save = useCallback((newData) => {
+    setData(newData);
+    lsSet(key, newData);
   }, [key]);
   return [data, save];
 }
 
+// ── Full data backup / restore ─────────────────────────────────────────────────
+const BACKUP_KEYS = [
+  STORAGE_KEYS.users,
+  STORAGE_KEYS.members,
+  STORAGE_KEYS.savings,
+  STORAGE_KEYS.loans,
+  STORAGE_KEYS.cash,
+  STORAGE_KEYS.bank,
+  STORAGE_KEYS.ie,
+  STORAGE_KEYS.categories,
+  STORAGE_KEYS.catLabels,
+  STORAGE_KEYS.lang,
+];
+
+function exportBackup() {
+  const backup = {
+    _version: DATA_VERSION,
+    _exported: new Date().toISOString(),
+    _app: "Fulbari Yuwa Samuha",
+  };
+  BACKUP_KEYS.forEach(k => {
+    const v = lsGet(k);
+    if (v !== null) backup[k] = v;
+  });
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `FYS_Backup_${date}.json`;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+}
+
+function importBackup(file, onDone) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const backup = JSON.parse(e.target.result);
+      if (!backup._app || backup._app !== "Fulbari Yuwa Samuha") {
+        alert("Invalid backup file. Please use a backup created from this app.");
+        return;
+      }
+      let restored = 0;
+      BACKUP_KEYS.forEach(k => {
+        if (backup[k] !== undefined) {
+          lsSet(k, backup[k]);
+          restored++;
+        }
+      });
+      alert(`✅ Backup restored! ${restored} data sets loaded. The page will now reload.`);
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      alert("Failed to read backup file. Make sure it is a valid JSON backup.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── Schema migration ───────────────────────────────────────────────────────────
+// Called once on startup if stored version differs from current.
+// NEVER deletes user data — only adds missing fields.
+function runMigrations() {
+  const storedVersion = lsGet(STORAGE_KEYS.version);
+  if (storedVersion === DATA_VERSION) return; // already up to date
+
+  // Members: ensure nameEn, position fields exist (added in v2)
+  const members = lsGet(STORAGE_KEYS.members);
+  if (Array.isArray(members)) {
+    const migrated = members.map(m => ({
+      nameEn: "",
+      position: "sadasya",
+      ...m, // existing fields always win — never overwrite
+    }));
+    lsSet(STORAGE_KEYS.members, migrated);
+  }
+
+  // Savings/Loans: ensure modifiedAt exists
+  for (const key of [STORAGE_KEYS.savings, STORAGE_KEYS.loans]) {
+    const rows = lsGet(key);
+    if (Array.isArray(rows)) {
+      lsSet(key, rows.map(r => ({ modifiedAt: today(), ...r })));
+    }
+  }
+
+  // Cash/Bank: ensure txId and txType exist
+  for (const key of [STORAGE_KEYS.cash, STORAGE_KEYS.bank]) {
+    const rows = lsGet(key);
+    if (Array.isArray(rows)) {
+      lsSet(key, rows.map(r => ({
+        txId: r.id || uid(),
+        txType: (r.cashIn > 0 || r.deposit > 0) ? "income" : "expense",
+        modifiedAt: today(),
+        ...r,
+      })));
+    }
+  }
+
+  // IE: ensure source field exists
+  const ie = lsGet(STORAGE_KEYS.ie);
+  if (Array.isArray(ie)) {
+    lsSet(STORAGE_KEYS.ie, ie.map(r => ({ source: "manual", modifiedAt: today(), ...r })));
+  }
+
+  // Categories: ensure all four groups exist, preserve user additions
+  const cats = lsGet(STORAGE_KEYS.categories);
+  if (cats && typeof cats === "object") {
+    const merged = {
+      income:      ["savingsContribution","interest","donationGift"],
+      expense:     ["meetingExpense","emergencyUse","otherExpense"],
+      assets:      ["cashAsset","bankAsset"],
+      liabilities: ["groupLoan","externalDebt"],
+      ...cats, // existing custom categories win
+    };
+    lsSet(STORAGE_KEYS.categories, merged);
+  }
+
+  // Migrate legacy per-key cat labels into unified key
+  const legacyLabels = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("fys_catlbl_")) {
+        legacyLabels[k.replace("fys_catlbl_", "")] = localStorage.getItem(k);
+      }
+    }
+    if (Object.keys(legacyLabels).length > 0) {
+      const existing = getCatLabels();
+      lsSet(STORAGE_KEYS.catLabels, { ...legacyLabels, ...existing });
+    }
+  } catch {}
+
+  // Mark migration complete
+  lsSet(STORAGE_KEYS.version, DATA_VERSION);
+}
+
+// Run migrations immediately at module load (before any component mounts)
+runMigrations();
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 4: SEED DATA
+// Stable, hardcoded IDs — these never change between app versions.
+// Seeds are ONLY used when localStorage is completely empty (first-ever load).
+// Existing user data in localStorage always takes priority.
 // ═══════════════════════════════════════════════════════════════════════════════
-const M1=uid(),M2=uid(),M3=uid();
 
-// EXACTLY TWO ROLES: "admin" (full access) and "member" (read-only)
-// No other roles allowed. Role is stored on the user object and detected on login.
-const SEED_USERS=[
-  {id:uid(),username:"admin",    password:"admin123", role:"admin",  displayName:"Admin"},
-  {id:uid(),username:"member",   password:"member123",role:"member", displayName:"सदस्य"},
+// Stable member IDs — hardcoded so cross-references between members/savings/loans
+// remain consistent even if the module is re-evaluated after an update.
+const M1 = "fys_m_001";
+const M2 = "fys_m_002";
+const M3 = "fys_m_003";
+
+// Stable user IDs
+const SEED_USERS = [
+  { id: "fys_u_admin",  username: "admin",   password: "admin123",  role: "admin",  displayName: "Admin" },
+  { id: "fys_u_member", username: "member",  password: "member123", role: "member", displayName: "सदस्य" },
 ];
-const SEED_MEMBERS=[
-  {id:M1,name:"राम बहादुर श्रेष्ठ",nameEn:"Ram Bahadur Shrestha",phone:"९८४१२३४५६७",address:"भक्तपुर",joinDate:"2024-01-15",position:"adakchya"},
-  {id:M2,name:"सीता देवी तामाङ",nameEn:"Sita Devi Tamang",phone:"९८०१२३४५६७",address:"काठमाडौं",joinDate:"2024-02-01",position:"sachib"},
-  {id:M3,name:"हरि प्रसाद गुरुङ",nameEn:"Hari Prasad Gurung",phone:"९८६१२३४५६७",address:"ललितपुर",joinDate:"2024-01-20",position:"sadasya"},
+
+const SEED_MEMBERS = [
+  { id:M1, name:"राम बहादुर श्रेष्ठ", nameEn:"Ram Bahadur Shrestha", phone:"९८४१२३४५६७", address:"भक्तपुर",    joinDate:"2024-01-15", position:"adakchya" },
+  { id:M2, name:"सीता देवी तामाङ",     nameEn:"Sita Devi Tamang",     phone:"९८०१२३४५६७", address:"काठमाडौं", joinDate:"2024-02-01", position:"sachib"   },
+  { id:M3, name:"हरि प्रसाद गुरुङ",    nameEn:"Hari Prasad Gurung",   phone:"९८६१२३४५६७", address:"ललितपुर",  joinDate:"2024-01-20", position:"sadasya"  },
 ];
-const SEED_SAVINGS=[
-  {id:uid(),memberId:M1,date:"2025-01-10",particulars:"मासिक बचत",deposit:500,withdraw:0,signature:"",modifiedAt:today()},
-  {id:uid(),memberId:M2,date:"2025-01-12",particulars:"मासिक बचत",deposit:500,withdraw:0,signature:"",modifiedAt:today()},
-  {id:uid(),memberId:M3,date:"2025-01-15",particulars:"मासिक बचत",deposit:500,withdraw:0,signature:"",modifiedAt:today()},
-  {id:uid(),memberId:M1,date:"2025-02-10",particulars:"मासिक बचत",deposit:500,withdraw:0,signature:"",modifiedAt:today()},
+
+// Stable transaction IDs
+const TX1="fys_tx_001", TX2="fys_tx_002", TX3="fys_tx_003",
+      TX4="fys_tx_004", TX5="fys_tx_005";
+
+const SEED_SAVINGS = [
+  { id:"fys_sv_001", memberId:M1, date:"2025-01-10", particulars:"मासिक बचत", deposit:500, withdraw:0, signature:"", modifiedAt:"2025-01-10" },
+  { id:"fys_sv_002", memberId:M2, date:"2025-01-12", particulars:"मासिक बचत", deposit:500, withdraw:0, signature:"", modifiedAt:"2025-01-12" },
+  { id:"fys_sv_003", memberId:M3, date:"2025-01-15", particulars:"मासिक बचत", deposit:500, withdraw:0, signature:"", modifiedAt:"2025-01-15" },
+  { id:"fys_sv_004", memberId:M1, date:"2025-02-10", particulars:"मासिक बचत", deposit:500, withdraw:0, signature:"", modifiedAt:"2025-02-10" },
 ];
-const SEED_LOANS=[
-  {id:uid(),memberId:M1,date:"2025-01-20",particulars:"व्यापार ऋण",loanAmount:5000,principalPaid:500,interestPaid:100,lateFee:0,signature:"",modifiedAt:today()},
-  {id:uid(),memberId:M3,date:"2025-02-05",particulars:"कृषि ऋण",loanAmount:3000,principalPaid:300,interestPaid:60,lateFee:0,signature:"",modifiedAt:today()},
+const SEED_LOANS = [
+  { id:"fys_ln_001", memberId:M1, date:"2025-01-20", particulars:"व्यापार ऋण", loanAmount:5000, principalPaid:500, interestPaid:100, lateFee:0, signature:"", modifiedAt:"2025-01-20" },
+  { id:"fys_ln_002", memberId:M3, date:"2025-02-05", particulars:"कृषि ऋण",   loanAmount:3000, principalPaid:300, interestPaid:60,  lateFee:0, signature:"", modifiedAt:"2025-02-05" },
 ];
-const TX1=uid(),TX2=uid(),TX3=uid(),TX4=uid(),TX5=uid();
-const SEED_CASH=[
-  {id:TX1,date:"2025-01-10",particulars:"बचत संकलन",cashIn:1500,cashOut:0,category:"savingsContribution",txId:TX1,modifiedAt:today()},
-  {id:TX2,date:"2025-01-20",particulars:"ऋण वितरण",cashIn:0,cashOut:8000,category:"groupLoan",txId:TX2,modifiedAt:today()},
-  {id:TX3,date:"2025-02-05",particulars:"ऋण भुक्तानी",cashIn:960,cashOut:0,category:"interest",txId:TX3,modifiedAt:today()},
+const SEED_CASH = [
+  { id:TX1, date:"2025-01-10", particulars:"बचत संकलन", cashIn:1500, cashOut:0,    category:"savingsContribution", txId:TX1, txType:"income",  modifiedAt:"2025-01-10" },
+  { id:TX2, date:"2025-01-20", particulars:"ऋण वितरण",  cashIn:0,    cashOut:8000, category:"groupLoan",           txId:TX2, txType:"expense", modifiedAt:"2025-01-20" },
+  { id:TX3, date:"2025-02-05", particulars:"ऋण भुक्तानी",cashIn:960, cashOut:0,    category:"interest",            txId:TX3, txType:"income",  modifiedAt:"2025-02-05" },
 ];
-const SEED_BANK=[
-  {id:TX4,date:"2025-01-11",particulars:"बचत जम्मा",deposit:1000,withdrawal:0,category:"savingsContribution",txId:TX4,modifiedAt:today()},
-  {id:TX5,date:"2025-02-01",particulars:"ऋण निकासी",deposit:0,withdrawal:5000,category:"groupLoan",txId:TX5,modifiedAt:today()},
+const SEED_BANK = [
+  { id:TX4, date:"2025-01-11", particulars:"बचत जम्मा", deposit:1000, withdrawal:0,    category:"savingsContribution", txId:TX4, txType:"income",  modifiedAt:"2025-01-11" },
+  { id:TX5, date:"2025-02-01", particulars:"ऋण निकासी", deposit:0,    withdrawal:5000, category:"groupLoan",           txId:TX5, txType:"expense", modifiedAt:"2025-02-01" },
 ];
-const SEED_IE=[
-  {id:TX1+"_s",date:"2025-01-10",particulars:"बचत संकलन [Cash]",income:1500,expense:0,category:"savingsContribution",txId:TX1,source:"cash",modifiedAt:today()},
-  {id:TX3+"_s",date:"2025-02-05",particulars:"ऋण भुक्तानी [Cash]",income:960,expense:0,category:"interest",txId:TX3,source:"cash",modifiedAt:today()},
-  {id:TX4+"_s",date:"2025-01-11",particulars:"बचत जम्मा [Bank]",income:1000,expense:0,category:"savingsContribution",txId:TX4,source:"bank",modifiedAt:today()},
-  {id:uid(),date:"2025-01-30",particulars:"कार्यालय खर्च",income:0,expense:200,category:"meetingExpense",txId:null,source:"manual",modifiedAt:today()},
+const SEED_IE = [
+  { id:TX1+"_s", date:"2025-01-10", particulars:"बचत संकलन [Cash]",  income:1500, expense:0,   category:"savingsContribution", txId:TX1, source:"cash",   modifiedAt:"2025-01-10" },
+  { id:TX3+"_s", date:"2025-02-05", particulars:"ऋण भुक्तानी [Cash]", income:960,  expense:0,   category:"interest",            txId:TX3, source:"cash",   modifiedAt:"2025-02-05" },
+  { id:TX4+"_s", date:"2025-01-11", particulars:"बचत जम्मा [Bank]",  income:1000, expense:0,   category:"savingsContribution", txId:TX4, source:"bank",   modifiedAt:"2025-01-11" },
+  { id:"fys_ie_001", date:"2025-01-30", particulars:"कार्यालय खर्च", income:0,    expense:200, category:"meetingExpense",      txId:null, source:"manual", modifiedAt:"2025-01-30" },
 ];
-const SEED_CATEGORIES={
-  income:["savingsContribution","interest","donationGift"],
-  expense:["meetingExpense","emergencyUse","otherExpense"],
-  assets:["cashAsset","bankAsset"],
-  liabilities:["groupLoan","externalDebt"],
+const SEED_CATEGORIES = {
+  income:      ["savingsContribution","interest","donationGift"],
+  expense:     ["meetingExpense","emergencyUse","otherExpense"],
+  assets:      ["cashAsset","bankAsset"],
+  liabilities: ["groupLoan","externalDebt"],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -231,6 +445,7 @@ const IP={
   del:"M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
   close:"M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   pdf:"M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z",
+  download:"M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
   excel:"M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1.99 4l-2.51 3.5L17 14h-2l-1.5-2.1-1.5 2.1H10l2.5-3.5L10 7h2l1.5 2.1L15 7h2.01z",
   user:"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
   lock:"M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z",
@@ -360,77 +575,77 @@ function exportCSV(filename,cols,rows){
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename+".csv";a.click();
 }
 
-// Robust print/PDF export — uses a hidden iframe so it works even when
-// popup-blockers prevent window.open(). Falls back to window.open if needed.
-function exportPrint(title,html){
-  const css=`
-    @import url('https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Sanskrit&family=Poppins:wght@400;600;700&display=swap');
-    *{box-sizing:border-box;}
-    body{
-      font-family:'Tiro Devanagari Sanskrit','Mangal','Poppins',sans-serif;
-      padding:1.5cm 2cm;font-size:13px;color:#111;margin:0;
-    }
-    .header{text-align:center;margin-bottom:1.5rem;border-bottom:2px solid #1b5e20;padding-bottom:0.75rem;}
-    .header h1{margin:0;font-size:1.4rem;color:#1b5e20;font-family:'Poppins','Tiro Devanagari Sanskrit',sans-serif;}
-    .header h2{margin:0.25rem 0 0;font-size:0.95rem;color:#555;font-weight:400;}
-    table{width:100%;border-collapse:collapse;margin-top:1rem;page-break-inside:auto;}
-    thead tr{background:#1b5e20;color:#fff;}
-    th{padding:7px 10px;text-align:left;font-weight:600;font-size:0.82rem;}
-    td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:0.82rem;}
-    tr:nth-child(even) td{background:#f0fdf4;}
-    .total-row td{font-weight:700;background:#dcfce7!important;color:#166534;}
-    .footer{text-align:center;margin-top:2rem;color:#888;font-size:0.75rem;border-top:1px solid #e5e7eb;padding-top:0.75rem;}
-    .sig-area{margin-top:2rem;display:grid;grid-template-columns:1fr 1fr;gap:2rem;}
-    .sig-line{border-top:1.5px solid #374151;padding-top:0.3rem;font-size:0.8rem;color:#555;text-align:center;}
-    @media print{
-      body{padding:1cm 1.5cm;}
-      button,.no-print{display:none!important;}
-      table{page-break-inside:auto;}
-      tr{page-break-inside:avoid;}
-    }
-  `;
-  const fullHTML=`<!DOCTYPE html>
-<html lang="ne"><head>
+// PDF / Download export
+// Strategy: build a fully self-contained HTML document and trigger an
+// immediate <a download> click — no print dialog, no popup, no iframe needed.
+// The downloaded file opens in any browser and can be saved as PDF via Ctrl+P.
+// This is the only approach that works reliably inside sandboxed iframes.
+function exportPrint(title, html) {
+  const date = new Date();
+  const dateNP = date.toLocaleDateString("ne-NP");
+  const dateEN = date.toLocaleDateString("en-GB");
+
+  const fullHTML = `<!DOCTYPE html>
+<html lang="ne">
+<head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${title}</title>
-  <style>${css}</style>
-</head><body>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Sanskrit&family=Poppins:wght@400;600;700&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{
+      font-family:'Tiro Devanagari Sanskrit','Mangal','Poppins',sans-serif;
+      padding:2cm 2.5cm;font-size:13px;color:#111;background:#fff;
+    }
+    .header{text-align:center;margin-bottom:1.5rem;border-bottom:3px solid #1b5e20;padding-bottom:1rem;}
+    .org{font-size:1.5rem;font-weight:700;color:#1b5e20;font-family:'Poppins',sans-serif;letter-spacing:0.02em;}
+    .report-title{font-size:1rem;color:#444;margin-top:0.4rem;font-weight:400;}
+    table{width:100%;border-collapse:collapse;margin-top:1.2rem;}
+    thead tr{background:#1b5e20;color:#fff;}
+    th{padding:8px 10px;text-align:left;font-weight:600;font-size:0.82rem;}
+    td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:0.82rem;}
+    tr:nth-child(even) td{background:#f0fdf4;}
+    .total-row td{font-weight:700;background:#dcfce7!important;color:#166534;border-top:2px solid #16a34a;}
+    .footer{text-align:center;margin-top:2rem;color:#888;font-size:0.75rem;border-top:1px solid #e5e7eb;padding-top:0.75rem;}
+    .sig-area{margin-top:2.5rem;display:grid;grid-template-columns:1fr 1fr;gap:3rem;}
+    .sig-line{border-top:1.5px solid #374151;padding-top:0.4rem;font-size:0.82rem;color:#555;text-align:center;}
+    @media print{body{padding:1cm 1.5cm;}@page{margin:1.5cm;}}
+  </style>
+</head>
+<body>
   <div class="header">
-    <h1>🌸 फुलबारी युवा समूह</h1>
-    <h2>${title}</h2>
+    <div class="org">🌸 फुलबारी युवा समूह</div>
+    <div class="report-title">${title}</div>
   </div>
   ${html}
   <div class="footer">
-    फुलबारी युवा समूह &nbsp;•&nbsp; मुद्रण मिति: ${new Date().toLocaleDateString("ne-NP")} &nbsp;•&nbsp; ${new Date().toLocaleDateString("en-GB")}
+    फुलबारी युवा समूह &nbsp;•&nbsp; ${dateNP} &nbsp;•&nbsp; ${dateEN}
   </div>
-</body></html>`;
+</body>
+</html>`;
 
-  // Try iframe-based print (works without popup permission)
+  // Create blob and trigger immediate download — works in sandboxed iframes,
+  // requires no popup permission, shows no dialog inside the app.
   try {
-    // Remove any stale iframe
-    const old=document.getElementById("__fys_print_frame");
-    if(old) old.remove();
-    const iframe=document.createElement("iframe");
-    iframe.id="__fys_print_frame";
-    iframe.style.cssText="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;";
-    document.body.appendChild(iframe);
-    const doc=iframe.contentDocument||iframe.contentWindow?.document;
-    if(!doc) throw new Error("no iframe doc");
-    doc.open();doc.write(fullHTML);doc.close();
-    // Wait for fonts to load then print
-    iframe.contentWindow.focus();
-    setTimeout(()=>{
-      try{ iframe.contentWindow.print(); }
-      catch(e){ window.print(); }
-      // Cleanup after user closes print dialog
-      setTimeout(()=>{ try{iframe.remove();}catch{} },30000);
-    },800);
-  } catch {
-    // Fallback: window.open
-    const w=window.open("","_blank","width=900,height=700");
-    if(w){ w.document.write(fullHTML); w.document.close(); w.focus(); setTimeout(()=>w.print(),800); }
-    else { alert("कृपया popup अनुमति दिनुहोस् र फेरि प्रयास गर्नुहोस्।\nPlease allow popups and try again."); }
+    const blob = new Blob([fullHTML], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    // Use .html extension — browser opens it natively; user can Ctrl+P → Save as PDF
+    const safeTitle = title.replace(/[^a-zA-Z0-9\u0900-\u097F\s]/g, "").trim().replace(/\s+/g, "_") || "report";
+    a.href = url;
+    a.download = `${safeTitle}_${dateEN.replace(/\//g, "-")}.html`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    // Cleanup
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+  } catch (err) {
+    // Last-resort: open in new tab
+    try {
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(fullHTML); w.document.close(); }
+    } catch {}
   }
 }
 
@@ -696,7 +911,7 @@ function LoginScreen({users,onLogin}){
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 7: PROFILE MODAL
 // ═══════════════════════════════════════════════════════════════════════════════
-function ProfileModal({user,users,setUsers,onClose,t}){
+function ProfileModal({user,users,setUsers,onClose,t,lang}){
   const [newUname,setNewUname]=useState(user.username);
   const [curPass,setCurPass]=useState("");
   const [newPass,setNewPass]=useState("");
@@ -737,6 +952,44 @@ function ProfileModal({user,users,setUsers,onClose,t}){
       <Field label={t.newPassword} type="password" value={newPass} onChange={setNewPass}/>
       <Btn onClick={saveP} icon="lock">{t.save}</Btn>
       {msg&&<div style={{marginTop:"1rem",padding:"0.6rem",background:"#dcfce7",color:"#166534",borderRadius:"0.5rem",fontSize:"0.85rem"}}>{msg}</div>}
+
+      {/* ── Data Backup / Restore ── */}
+      <hr style={{border:"none",borderTop:"1px solid #e5e7eb",margin:"1rem 0"}}/>
+      <h4 style={{color:"#1b5e20",margin:"0 0 0.5rem",fontSize:"0.9rem"}}>
+        🗄️ {lang==="np"?"डाटा ब्याकअप / रिस्टोर":"Data Backup / Restore"}
+      </h4>
+      <p style={{fontSize:"0.78rem",color:"#6b7280",margin:"0 0 0.75rem",lineHeight:1.5}}>
+        {lang==="np"
+          ?"सबै सदस्य, बचत, ऋण, र अन्य डाटा JSON फाइलमा डाउनलोड गर्नुहोस्। यो फाइल राखेर भविष्यमा पुनः लोड गर्न सकिन्छ।"
+          :"Download all members, savings, loans, and other data as a JSON file. Keep it safe to restore your data anytime."}
+      </p>
+      {/* Export backup */}
+      <button
+        type="button"
+        onClick={exportBackup}
+        style={{width:"100%",padding:"0.6rem",background:"#1b5e20",color:"#fff",border:"none",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:"0.85rem",marginBottom:"0.5rem",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}
+      >
+        <Icon name="download" size={15} color="#fff"/>
+        {lang==="np"?"डाटा ब्याकअप डाउनलोड गर्नुहोस्":"Download Data Backup (.json)"}
+      </button>
+      {/* Import backup */}
+      <label style={{display:"block",width:"100%",padding:"0.6rem",background:"#f0fdf4",color:"#1b5e20",border:"2px dashed #16a34a",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:"0.85rem",textAlign:"center",boxSizing:"border-box"}}>
+        <Icon name="plus" size={14} color="#1b5e20" style={{verticalAlign:"middle",marginRight:4}}/>
+        {lang==="np"?" ब्याकअप फाइलबाट रिस्टोर गर्नुहोस्":" Restore from Backup (.json)"}
+        <input
+          type="file"
+          accept=".json,application/json"
+          style={{display:"none"}}
+          onChange={e=>{
+            const file=e.target.files?.[0];
+            if(file) importBackup(file, ()=>{});
+            e.target.value="";
+          }}
+        />
+      </label>
+      <p style={{fontSize:"0.72rem",color:"#9ca3af",margin:"0.4rem 0 0",textAlign:"center"}}>
+        {lang==="np"?"⚠ रिस्टोर गर्दा हालको डाटा बदलिनेछ।":"⚠ Restore will overwrite current data with backup."}
+      </p>
     </Modal>
   );
 }
@@ -754,7 +1007,7 @@ function CategoryManager({categories,setCategories,onClose,t,cash,bank,ie,saving
     if((categories[nc.type]||[]).includes(nc.key)){setErr("यो श्रेणी पहिले नै छ!");return;}
     // Use functional setter so we always work on latest state
     setCategories(prev=>({...prev,[nc.type]:[...(prev[nc.type]||[]),nc.key]}));
-    try{localStorage.setItem("fys_catlbl_"+nc.key,nc.label);}catch{}
+    setCatLabel(nc.key, nc.label);
     setNc({type:"income",key:"",label:""});setErr("");
   };
 
@@ -777,10 +1030,7 @@ function CategoryManager({categories,setCategories,onClose,t,cash,bank,ie,saving
     }));
   };
 
-  const getLabel=k=>{
-    try{return localStorage.getItem("fys_catlbl_"+k)||catLabel(k,t);}
-    catch{return catLabel(k,t);}
-  };
+  const getLabel=k=>getCatLabel(k)||catLabel(k,t);
 
   const groupLabels={income:"आय / Income",expense:"व्यय / Expense",assets:"सम्पत्ति / Assets",liabilities:"दायित्व / Liabilities"};
 
@@ -1048,25 +1298,25 @@ function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
 // SECTION 9: MAIN APP (Admin only reaches here)
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App(){
-  const [lang,setLangState]=useState(()=>{ try{return localStorage.getItem("fys_lang")||"np";}catch{return "np";} });
+  const [lang,setLangState]=useState(()=>lsGet(STORAGE_KEYS.lang)||"np");
   const t=T[lang];
   const fmtFn=lang==="en"?fmtEn:fmt;
-  const setLang=l=>{ setLangState(l); try{localStorage.setItem("fys_lang",l);}catch{} };
+  const setLang=l=>{ setLangState(l); lsSet(STORAGE_KEYS.lang, l); };
 
-  const [users,setUsers]=useStore("fys_users",SEED_USERS);
-  const [currentUser,setCurrentUser]=useState(()=>{ try{const s=localStorage.getItem("fys_session");return s?JSON.parse(s):null;}catch{return null;} });
+  const [users,setUsers]=useStore(STORAGE_KEYS.users,SEED_USERS);
+  const [currentUser,setCurrentUser]=useState(()=>lsGet(STORAGE_KEYS.session));
   const [tab,setTab]=useState("dashboard");
   const [showProfile,setShowProfile]=useState(false);
   const [showCatMgr,setShowCatMgr]=useState(false);
   const [useBS,setUseBS]=useState(true);
 
-  const [members,setMembers]=useStore("fys_members",SEED_MEMBERS);
-  const [savings,setSavings]=useStore("fys_savings",SEED_SAVINGS);
-  const [loans,setLoans]=useStore("fys_loans",SEED_LOANS);
-  const [cash,setCash]=useStore("fys_cash",SEED_CASH);
-  const [bank,setBank]=useStore("fys_bank",SEED_BANK);
-  const [ie,setIE]=useStore("fys_ie",SEED_IE);
-  const [categories,setCategories]=useStore("fys_categories",SEED_CATEGORIES);
+  const [members,setMembers]=useStore(STORAGE_KEYS.members,SEED_MEMBERS);
+  const [savings,setSavings]=useStore(STORAGE_KEYS.savings,SEED_SAVINGS);
+  const [loans,setLoans]=useStore(STORAGE_KEYS.loans,SEED_LOANS);
+  const [cash,setCash]=useStore(STORAGE_KEYS.cash,SEED_CASH);
+  const [bank,setBank]=useStore(STORAGE_KEYS.bank,SEED_BANK);
+  const [ie,setIE]=useStore(STORAGE_KEYS.ie,SEED_IE);
+  const [categories,setCategories]=useStore(STORAGE_KEYS.categories,SEED_CATEGORIES);
   const [search,setSearch]=useState("");
 
   // Strictly two roles: "admin" = full access, "member" = read-only
@@ -1074,12 +1324,17 @@ export default function App(){
   const isAdmin=currentUser&&(currentUser.role==="admin"||
     (currentUser.role!=="member"&&!!currentUser.role));
 
-  const login=u=>{ setCurrentUser(u); try{localStorage.setItem("fys_session",JSON.stringify(u));}catch{} };
-  const logout=()=>{ setCurrentUser(null); try{localStorage.removeItem("fys_session");}catch{} };
+  const login=u=>{ setCurrentUser(u); lsSet(STORAGE_KEYS.session, u); };
+  const logout=()=>{ setCurrentUser(null); try{localStorage.removeItem(STORAGE_KEYS.session);}catch{} };
 
   // Sync session when users update (pw/username change)
   useEffect(()=>{
-    if(currentUser){ const u=users.find(x=>x.id===currentUser.id); if(u&&(u.username!==currentUser.username||u.password!==currentUser.password)){ setCurrentUser(u); try{localStorage.setItem("fys_session",JSON.stringify(u));}catch{} } }
+    if(currentUser){
+      const u=users.find(x=>x.id===currentUser.id);
+      if(u&&(u.username!==currentUser.username||u.password!==currentUser.password)){
+        setCurrentUser(u); lsSet(STORAGE_KEYS.session, u);
+      }
+    }
   },[users]);
 
   // ── Sync helpers ───────────────────────────────────────────────────────────
@@ -1154,17 +1409,6 @@ export default function App(){
       />
     );
   }
-  const nav=[
-    {id:"dashboard",label:t.dashboard,icon:"dashboard"},
-    {id:"members",label:t.members,icon:"members"},
-    {id:"saving",label:t.saving,icon:"saving"},
-    {id:"loan",label:t.loan,icon:"loan"},
-    {id:"cash",label:t.cash,icon:"cash"},
-    {id:"bank",label:t.bank,icon:"bank"},
-    {id:"ie",label:t.income,icon:"income"},
-    {id:"report",label:t.report,icon:"report"},
-  ];
-
   // Reusable style for every compact header icon button
   const hBtn=(extra={})=>({
     background:"rgba(255,255,255,0.13)",
@@ -1309,30 +1553,160 @@ export default function App(){
         </div>
       </header>
 
-      {/* ── Nav tabs ── */}
-      <nav style={{background:"#fff",borderBottom:"2px solid #bbf7d0",overflowX:"auto",display:"flex",whiteSpace:"nowrap",boxShadow:"0 2px 4px rgba(0,0,0,0.05)"}}>
-        {nav.map(n=>(
-          <button key={n.id} onClick={()=>setTab(n.id)} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:2,padding:"0.55rem 0.85rem",border:"none",background:"none",cursor:"pointer",color:tab===n.id?"#1b5e20":"#6b7280",fontWeight:tab===n.id?700:500,fontSize:"0.67rem",borderBottom:tab===n.id?"3px solid #16a34a":"3px solid transparent",fontFamily:"inherit",transition:"all 0.15s"}}>
-            <Icon name={n.icon} size={17} color={tab===n.id?"#1b5e20":"#9ca3af"}/>
-            {n.label}
+      {/* ── Page content — padded bottom so it clears the fixed bottom nav ── */}
+      <main style={{padding:"1rem",maxWidth:960,margin:"0 auto",paddingBottom:"5rem"}}>
+
+        {/* ── DASHBOARD ── */}
+        {tab==="dashboard"&&(
+          <Dashboard {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,lang,t,useBS,fmtFn,getMember}}/>
+        )}
+
+        {/* ── MEMBERS ── */}
+        {tab==="members"&&(
+          <Members {...{members,setMembers,search,setSearch,...sp}}/>
+        )}
+
+        {/* ── FINANCE (Saving + Loan + Income/Expense combined) ── */}
+        {tab==="finance"&&(
+          <FinancePage {...{savings,setSavings,loans,setLoans,ie,setIE,members,memberOptions,getMember,...sp}}/>
+        )}
+
+        {/* ── BOOKS (Cash Book + Bank Book combined) ── */}
+        {tab==="books"&&(
+          <BooksPage {...{cash,addCash,updCash,delCash,bank,addBank,updBank,delBank,...sp}}/>
+        )}
+
+        {/* ── REPORT ── */}
+        {tab==="report"&&(
+          <Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,...sp}}/>
+        )}
+
+      </main>
+
+      {/* ══════════════════════════════════════════════════════════════
+          BOTTOM NAVIGATION — fixed, 5 tabs, mobile-app style
+          ══════════════════════════════════════════════════════════════ */}
+      <nav style={{
+        position:"fixed",bottom:0,left:0,right:0,
+        height:58,
+        background:"#fff",
+        borderTop:"1.5px solid #bbf7d0",
+        display:"flex",
+        alignItems:"stretch",
+        zIndex:300,
+        boxShadow:"0 -2px 12px rgba(0,0,0,0.1)",
+      }}>
+        {[
+          {id:"dashboard", label:lang==="np"?"होम":"Home",         icon:"dashboard"},
+          {id:"members",   label:lang==="np"?"सदस्य":"Members",     icon:"members"},
+          {id:"finance",   label:lang==="np"?"वित्त":"Finance",      icon:"saving"},
+          {id:"books",     label:lang==="np"?"किताब":"Books",        icon:"bank"},
+          {id:"report",    label:lang==="np"?"रिपोर्ट":"Report",     icon:"report"},
+        ].map(n=>(
+          <button
+            key={n.id}
+            type="button"
+            onClick={()=>setTab(n.id)}
+            style={{
+              flex:1,border:"none",background:"none",cursor:"pointer",
+              display:"flex",flexDirection:"column",alignItems:"center",
+              justifyContent:"center",gap:2,
+              fontFamily:"'Poppins',inherit",
+              fontSize:"0.62rem",fontWeight:tab===n.id?700:400,
+              color:tab===n.id?"#1b5e20":"#9ca3af",
+              position:"relative",
+              transition:"color 0.15s",
+              paddingBottom:2,
+            }}
+          >
+            {/* Active indicator dot above icon */}
+            {tab===n.id&&(
+              <span style={{
+                position:"absolute",top:4,left:"50%",transform:"translateX(-50%)",
+                width:20,height:3,borderRadius:2,
+                background:"#1b5e20",
+              }}/>
+            )}
+            <Icon name={n.icon} size={20} color={tab===n.id?"#1b5e20":"#9ca3af"}/>
+            <span style={{lineHeight:1.1}}>{n.label}</span>
           </button>
         ))}
       </nav>
 
-      {/* ── Page content ── */}
-      <main style={{padding:"1rem",maxWidth:960,margin:"0 auto"}}>
-        {tab==="dashboard"&&<Dashboard {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,lang,t,useBS,fmtFn,getMember}}/>}
-        {tab==="members"&&<Members {...{members,setMembers,search,setSearch,...sp}}/>}
-        {tab==="saving"&&<SavingLedger {...{savings,setSavings,members,memberOptions,getMember,...sp}}/>}
-        {tab==="loan"&&<LoanLedger {...{loans,setLoans,members,memberOptions,getMember,...sp}}/>}
-        {tab==="cash"&&<CashBook {...{cash,addCash,updCash,delCash,...sp}}/>}
-        {tab==="bank"&&<BankBook {...{bank,addBank,updBank,delBank,...sp}}/>}
-        {tab==="ie"&&<IncomeExpense {...{ie,setIE,...sp}}/>}
-        {tab==="report"&&<Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,...sp}}/>}
-      </main>
-
-      {showProfile&&<ProfileModal user={currentUser} users={users} setUsers={setUsers} onClose={()=>setShowProfile(false)} t={t}/>}
+      {showProfile&&<ProfileModal user={currentUser} users={users} setUsers={setUsers} onClose={()=>setShowProfile(false)} t={t} lang={lang}/>}
       {showCatMgr&&isAdmin&&<CategoryManager categories={categories} setCategories={setCategories} onClose={()=>setShowCatMgr(false)} t={t} cash={cash} bank={bank} ie={ie} savings={savings} loans={loans}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FINANCE PAGE — Saving + Loan + Income/Expense with sub-tabs
+// ═══════════════════════════════════════════════════════════════════════════════
+function FinancePage({savings,setSavings,loans,setLoans,ie,setIE,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin,categories}){
+  const [sub,setSub]=useState("saving");
+  const subTabs=[
+    {id:"saving", label:lang==="np"?"बचत":"Saving",  icon:"saving",  color:"#16a34a"},
+    {id:"loan",   label:lang==="np"?"ऋण":"Loan",     icon:"loan",    color:"#dc2626"},
+    {id:"ie",     label:lang==="np"?"आय-व्यय":"Inc/Exp", icon:"income", color:"#7c3aed"},
+  ];
+  const sp={lang,t,useBS,fmtFn,isAdmin,categories};
+  return(
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{display:"flex",gap:"0.4rem",marginBottom:"1rem",background:"#f0fdf4",borderRadius:"0.75rem",padding:"0.35rem"}}>
+        {subTabs.map(s=>(
+          <button key={s.id} type="button" onClick={()=>setSub(s.id)} style={{
+            flex:1,padding:"0.45rem 0.25rem",border:"none",cursor:"pointer",
+            borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.75rem",fontWeight:sub===s.id?700:500,
+            background:sub===s.id?"#fff":"transparent",
+            color:sub===s.id?s.color:"#6b7280",
+            boxShadow:sub===s.id?"0 1px 4px rgba(0,0,0,0.1)":"none",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:4,
+            transition:"all 0.15s",
+          }}>
+            <Icon name={s.icon} size={14} color={sub===s.id?s.color:"#9ca3af"}/>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub==="saving"&&<SavingLedger {...{savings,setSavings,members,memberOptions,getMember,...sp}}/>}
+      {sub==="loan"&&<LoanLedger {...{loans,setLoans,members,memberOptions,getMember,...sp}}/>}
+      {sub==="ie"&&<IncomeExpense {...{ie,setIE,...sp}}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOOKS PAGE — Cash Book + Bank Book with sub-tabs
+// ═══════════════════════════════════════════════════════════════════════════════
+function BooksPage({cash,addCash,updCash,delCash,bank,addBank,updBank,delBank,lang,t,useBS,fmtFn,isAdmin,categories}){
+  const [sub,setSub]=useState("cash");
+  const subTabs=[
+    {id:"cash", label:lang==="np"?"नगद किताब":"Cash Book",  icon:"cash",  color:"#d97706"},
+    {id:"bank", label:lang==="np"?"बैंक किताब":"Bank Book",  icon:"bank",  color:"#2563eb"},
+  ];
+  const sp={lang,t,useBS,fmtFn,isAdmin,categories};
+  return(
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{display:"flex",gap:"0.4rem",marginBottom:"1rem",background:"#f0fdf4",borderRadius:"0.75rem",padding:"0.35rem"}}>
+        {subTabs.map(s=>(
+          <button key={s.id} type="button" onClick={()=>setSub(s.id)} style={{
+            flex:1,padding:"0.5rem 0.25rem",border:"none",cursor:"pointer",
+            borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.78rem",fontWeight:sub===s.id?700:500,
+            background:sub===s.id?"#fff":"transparent",
+            color:sub===s.id?s.color:"#6b7280",
+            boxShadow:sub===s.id?"0 1px 4px rgba(0,0,0,0.1)":"none",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+            transition:"all 0.15s",
+          }}>
+            <Icon name={s.icon} size={15} color={sub===s.id?s.color:"#9ca3af"}/>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub==="cash"&&<CashBook {...{cash,addCash,updCash,delCash,...sp}}/>}
+      {sub==="bank"&&<BankBook {...{bank,addBank,updBank,delBank,...sp}}/>}
     </div>
   );
 }
@@ -1430,10 +1804,11 @@ function Members({members,setMembers,search,setSearch,lang,t,useBS,fmtFn,isAdmin
     positionDisp:positionLabel(m.position||"sadasya",t),
   }));
 
-  // Print HTML with proper CSS class
+  // Print HTML with proper CSS class — includes serial number column
   const printMembersHTML=`
     <table>
       <thead><tr>
+        <th>#</th>
         <th>${t.nameNp||"नेपाली नाम"}</th>
         <th>${t.nameEn||"English Name"}</th>
         <th>${t.position||"पद"}</th>
@@ -1442,7 +1817,8 @@ function Members({members,setMembers,search,setSearch,lang,t,useBS,fmtFn,isAdmin
         <th>${t.joinDate}</th>
       </tr></thead>
       <tbody>
-        ${rows.map(m=>`<tr>
+        ${rows.map((m,i)=>`<tr>
+          <td style="text-align:center;font-weight:600;color:#1b5e20;">${i+1}</td>
           <td>${m.name||""}</td>
           <td>${m.nameEn||""}</td>
           <td>${m.positionDisp}</td>
@@ -1458,21 +1834,22 @@ function Members({members,setMembers,search,setSearch,lang,t,useBS,fmtFn,isAdmin
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>👥 {t.members}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.members,printMembersHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.members,printMembersHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV("members",[
+            {key:"sn",label:"#"},
             {key:"name",label:t.nameNp||"नेपाली नाम"},
             {key:"nameEn",label:t.nameEn||"English Name"},
             {key:"positionDisp",label:t.position||"पद"},
             {key:"phone",label:t.phone},
             {key:"address",label:t.address},
             {key:"joinDateDisp",label:t.joinDate},
-          ],rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
+          ],rows.map((m,i)=>({...m,sn:i+1})))} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>open("add")} icon="plus">{t.add}</Btn>}
         </div>
       </div>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={t.search} style={{width:"100%",padding:"0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.9rem",fontFamily:"inherit",boxSizing:"border-box",marginBottom:"0.75rem",outline:"none"}}/>
 
-      {/* Member cards — bilingual name display */}
+      {/* Member cards — bilingual name display with serial number */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"0.75rem"}}>
         {rows.length===0&&(
           <div style={{gridColumn:"1/-1",textAlign:"center",color:"#9ca3af",padding:"2rem",fontStyle:"italic"}}>{t.noData}</div>
@@ -1482,18 +1859,32 @@ function Members({members,setMembers,search,setSearch,lang,t,useBS,fmtFn,isAdmin
             <div style={{padding:"0.85rem 1rem 0.65rem"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"0.5rem"}}>
                 <div style={{minWidth:0,flex:1}}>
-                  {/* Primary name — language aware */}
-                  <div style={{fontWeight:700,fontSize:"0.95rem",color:"#111827",fontFamily:smartFont(m.displayName),lineHeight:1.3}}>
-                    {m.displayName}
+                  {/* Serial number + Primary name row */}
+                  <div style={{display:"flex",alignItems:"baseline",gap:"0.4rem"}}>
+                    <span style={{
+                      flexShrink:0,
+                      minWidth:22,height:22,
+                      background:"#1b5e20",color:"#fff",
+                      borderRadius:"50%",
+                      fontSize:"0.68rem",fontWeight:700,
+                      display:"inline-flex",alignItems:"center",justifyContent:"center",
+                      fontFamily:"'Poppins',sans-serif",
+                      lineHeight:1,
+                    }}>
+                      {i+1}
+                    </span>
+                    <div style={{fontWeight:700,fontSize:"0.95rem",color:"#111827",fontFamily:smartFont(m.displayName),lineHeight:1.3}}>
+                      {m.displayName}
+                    </div>
                   </div>
                   {/* Secondary name — always show the other language if present */}
                   {lang==="en" && m.name && (
-                    <div style={{fontSize:"0.75rem",color:"#6b7280",fontFamily:smartFont(m.name),marginTop:1}}>
+                    <div style={{fontSize:"0.75rem",color:"#6b7280",fontFamily:smartFont(m.name),marginTop:1,marginLeft:26}}>
                       {m.name}
                     </div>
                   )}
                   {lang==="np" && m.nameEn && (
-                    <div style={{fontSize:"0.75rem",color:"#6b7280",fontFamily:"'Poppins',sans-serif",marginTop:1}}>
+                    <div style={{fontSize:"0.75rem",color:"#6b7280",fontFamily:"'Poppins',sans-serif",marginTop:1,marginLeft:26}}>
                       {m.nameEn}
                     </div>
                   )}
@@ -1572,7 +1963,7 @@ function SavingLedger({savings,setSavings,members,memberOptions,getMember,lang,t
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>💰 {t.saving}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.saving,printHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.saving,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.saving,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
@@ -1632,7 +2023,7 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>🏦 {t.loan}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.loan,printHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.loan,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.loan,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
@@ -1706,7 +2097,7 @@ function CashBook({cash,addCash,updCash,delCash,lang,t,useBS,fmtFn,isAdmin,categ
     });
   };
 
-  const getLabel=k=>{try{return localStorage.getItem("fys_catlbl_"+k)||catLabel(k,t);}catch{return catLabel(k,t);}};
+  const getLabel=k=>getCatLabel(k)||catLabel(k,t);
 
   // Filtered category options based on current txType
   const filteredCatOpts=(()=>{
@@ -1775,7 +2166,7 @@ function CashBook({cash,addCash,updCash,delCash,lang,t,useBS,fmtFn,isAdmin,categ
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>💵 {t.cash}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.cash,printHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.cash,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.cash,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setFormErr("");setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
@@ -1922,7 +2313,7 @@ function BankBook({bank,addBank,updBank,delBank,lang,t,useBS,fmtFn,isAdmin,categ
     });
   };
 
-  const getLabel=k=>{try{return localStorage.getItem("fys_catlbl_"+k)||catLabel(k,t);}catch{return catLabel(k,t);}};
+  const getLabel=k=>getCatLabel(k)||catLabel(k,t);
 
   // Filtered category options based on current txType
   const filteredCatOpts=(()=>{
@@ -1986,7 +2377,7 @@ function BankBook({bank,addBank,updBank,delBank,lang,t,useBS,fmtFn,isAdmin,categ
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>🏛️ {t.bank}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.bank,printHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.bank,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.bank,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setFormErr("");setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
@@ -2113,7 +2504,7 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   const f=k=>v=>setForm(p=>({...p,[k]:v}));
   const withBal=rows=>{let b=0;return[...rows].sort((a,bb)=>a.date.localeCompare(bb.date)).map(r=>{b+=(r.income||0)-(r.expense||0);return{...r,balance:b};});};
   const rows=withBal(ie).map(r=>({...r,dateDisp:displayDate(r.date,lang,useBS)}));
-  const getLabel=k=>{try{return localStorage.getItem("fys_catlbl_"+k)||catLabel(k,t);}catch{return catLabel(k,t);}};
+  const getLabel=k=>getCatLabel(k)||catLabel(k,t);
   const catOpts=[...(categories.income||[]),...(categories.expense||[])].map(k=>({value:k,label:getLabel(k)}));
   const save=()=>{
     const en={...form,income:+form.income,expense:+form.expense,modifiedAt:new Date().toISOString()};
@@ -2137,7 +2528,7 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>📊 {t.income}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.income,printHTML)} color="#dc2626" icon="pdf">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(t.income,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.income,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
@@ -2229,7 +2620,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>📄 {t.report}</h2>
-        <Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="pdf">{t.print}</Btn>
+        <Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>
       </div>
       <div style={{display:"flex",gap:"0.5rem",marginBottom:"1rem"}}>
         {["monthly","yearly"].map(m=>(

@@ -1,3 +1,5 @@
+import { ref, push, set, onValue } from "firebase/database";
+import { db } from "./firebase";
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
 
 // Logo SVG - inline, no external dependency

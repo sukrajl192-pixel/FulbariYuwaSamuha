@@ -1,6 +1,62 @@
+import React, { useState, useEffect } from "react";
 import { ref, push, set, onValue } from "firebase/database";
 import { db } from "./firebase";
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+
+function App() {
+    const [members, setMembers] = useState([]);
+
+    // 🚀 STEP 2: DATA SAVE
+    function addData() {
+        console.log("clicked");
+
+        const newRef = push(ref(db, "members"));
+
+        set(newRef, {
+            name: "Ram",
+            time: Date.now()
+        });
+    }
+
+    // 🚀 STEP 3: DATA READ (REAL TIME)
+    useEffect(() => {
+        const membersRef = ref(db, "members");
+
+        onValue(membersRef, (snapshot) => {
+            const data = snapshot.val();
+            console.log("Firebase Data:", data);
+
+            if (data) {
+                setMembers(Object.values(data));
+            } else {
+                setMembers([]);
+            }
+        });
+    }, []);
+
+    return (
+        <div style={{ padding: "20px" }}>
+            <h2>Firebase Test App</h2>
+
+            {/* BUTTON */}
+            <button onClick={addData}>
+                Add Member
+            </button>
+
+            <h3>Members List:</h3>
+
+            {/* SHOW DATA */}
+            {members.map((m, i) => (
+                <div key={i}>
+                    <p>Name: {m.name}</p>
+                    <p>Time: {m.time}</p>
+                    <hr />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+export default App;
 
 // Logo SVG - inline, no external dependency
 const LOGO_SRC = "data:image/webp;base64,UklGRiwFAABXRUJQVlA4ICAFAAAQGACdASp4AHgAPxGAt1SsKCUjKJtJ4YAiCWYAekZC99HZs9EO3G3J283egB0yeANdkXfb5GgJ10O9WUr+d8xNLu0QS18yJSX6mKjxNY90I24QYixJg2luKxvuaRmuWMCT1wmqLjaxYpctYaMyT59WPGkamxdEMW5V4n4JgAdXDlcrSXpEUEv8aXb3zlsUO/Skxaz1uRoN0JzaKtghNaNOKvbbjG5Q+PYrMJMpWRg8i9Iv1bo72UQd1B7qjSo/Q7FwYrnwsIUcoSAA/vFpALtWGlymSeVlR/zd6CYrMHE4E+HtbAA82BRGwvI5Jonr5Ft7uIMh1mPVsLfnUGBtWeQ/q5aYseNUcQonlbF1KTVB4p32w7tWPCvPTM+y3CMfqN/qxEtwVN9Uz4+9EX+6D/ga3cKqfb+2Lj4QVfncMi/O9T4YRSvIwZN9DCr7LtwJSE3wyK1FOpxYM1/duM/NQ5xjT2NtKE3dSr7DuiGs0PYnQGE1GjKUJGYOA2gTCz4+kgyAihvjoYyvSz+zrqKag5/fxpWXF+0rulyxFrz5ZHBCGaielJWRt+fHvyZl5Xon9WeUayPRFsSqpm69pcoRG8LNa+aPjs2fyS8uPrdx9m3k9tc0HcE/bvl5t0cdekdAT/8kCc6Q66r9KqikmPlBvDSFj+inoMWyN/QBsiup0uTA1VsW34y70PsdhKs01lu/cu0mB4BjH5AxIHKCXo4APcCJfDzsIKm0bmQme2GElGP5pXicrma/NuIjZlmVO8yWCfH69xWfVw3orsysxg2PxS38V37F8OMw4HQQWqRMqvv8ioVtrGtJ9OQtbsWY/d+aJLoJvwmwvKprZxIUDpFisEz664IJDAaXBpXsIISdEt+9ZO8NFOIB2Fms6zHf9bxHuvXi/jW//m/SxHQINIBOo4/BcyXv3eBbqDf4ChQih0Rya0RgiAyLuh/ugZFaf0p96T9eyqmQ5VZv+0bRSJd/SYsFCcdw/OL8E/Ky9HpkE+HyYry9Tv34ivFnFsho3IMKgBVfZJEugTlzSfO66WrLoXeQm/yizaIUqFp+M1akw6EIIy0Kb5ept27gFs6hvyRQHkAjQKzyqMkBHI1bT/M7+SxF9GxkPTYQvO8fcq3dr6xmX9HCLnWgvGO53Wcpu/RugN2J+ZuBDZVNGclicLi5HqJI3n9q7YL6UDDyf5cakX9UlLLgo4oX1XOM5SEy0FNxoVcrmK1Lj8v/yAgXTAtXDouKMTvFOOp0KhCvIDy79JullXgTmCp05lUStYFeCuQ6CKI7wqQOTutirPurFj2St+Mr523jdwQvdsKGPM2ZWfQCctWORqdoHja0IBCyRXOcQ/uRHZ5UVFJUFBNNOtPDo57vkGr8ZADn8Ybrtdj2wzMUwvVAZXZ8W0vyRWd9WVGJiwJnwgrPLTb7uOgQsOX3bCDpHwBFNGXeOwcP4TTnUq4IGlFVmti4cys1AY8g7/c8kEokmKWMYwsIYnqUJWHMRGtA7GI02LX8G2wKQCvXPbc9WQhfxWB0b7zk2DdWw7GXqppoB8aCr0dP4lJEGS9CmhxSI8TSpvIeiQqAxcLfGjqY8FSDPfKIuTG0PRYseIo62oj0idm59tl15WSf1m1c71dEfysO+wGy3nc1GZ0VKwowZ+Muvht9sbwe2M5YbejXU+DPmCyC+49tW+Bdlw6OMzfUnmihmztmgtql01cyBm6AMiQS6GdDXmpoT1gQgQMCxRegvWCeETs0PTEjH0lngAAA";
@@ -61,6 +117,8 @@ function adToBS(adStr) {
     }
   }
   return { y:bsY, m:bsM, d:bsD, str:`${bsY}-${String(bsM).padStart(2,"0")}-${String(bsD).padStart(2,"0")}` };
+}
+    });
 }
 
 function displayDate(adStr, lang, useBS) {

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { ref as fbRef, set as fbSet, onValue } from "firebase/database";
+import { db } from "./firebase";
 
 // Logo SVG - inline, no external dependency
 const LOGO_SRC = "data:image/webp;base64,UklGRiwFAABXRUJQVlA4ICAFAAAQGACdASp4AHgAPxGAt1SsKCUjKJtJ4YAiCWYAekZC99HZs9EO3G3J283egB0yeANdkXfb5GgJ10O9WUr+d8xNLu0QS18yJSX6mKjxNY90I24QYixJg2luKxvuaRmuWMCT1wmqLjaxYpctYaMyT59WPGkamxdEMW5V4n4JgAdXDlcrSXpEUEv8aXb3zlsUO/Skxaz1uRoN0JzaKtghNaNOKvbbjG5Q+PYrMJMpWRg8i9Iv1bo72UQd1B7qjSo/Q7FwYrnwsIUcoSAA/vFpALtWGlymSeVlR/zd6CYrMHE4E+HtbAA82BRGwvI5Jonr5Ft7uIMh1mPVsLfnUGBtWeQ/q5aYseNUcQonlbF1KTVB4p32w7tWPCvPTM+y3CMfqN/qxEtwVN9Uz4+9EX+6D/ga3cKqfb+2Lj4QVfncMi/O9T4YRSvIwZN9DCr7LtwJSE3wyK1FOpxYM1/duM/NQ5xjT2NtKE3dSr7DuiGs0PYnQGE1GjKUJGYOA2gTCz4+kgyAihvjoYyvSz+zrqKag5/fxpWXF+0rulyxFrz5ZHBCGaielJWRt+fHvyZl5Xon9WeUayPRFsSqpm69pcoRG8LNa+aPjs2fyS8uPrdx9m3k9tc0HcE/bvl5t0cdekdAT/8kCc6Q66r9KqikmPlBvDSFj+inoMWyN/QBsiup0uTA1VsW34y70PsdhKs01lu/cu0mB4BjH5AxIHKCXo4APcCJfDzsIKm0bmQme2GElGP5pXicrma/NuIjZlmVO8yWCfH69xWfVw3orsysxg2PxS38V37F8OMw4HQQWqRMqvv8ioVtrGtJ9OQtbsWY/d+aJLoJvwmwvKprZxIUDpFisEz664IJDAaXBpXsIISdEt+9ZO8NFOIB2Fms6zHf9bxHuvXi/jW//m/SxHQINIBOo4/BcyXv3eBbqDf4ChQih0Rya0RgiAyLuh/ugZFaf0p96T9eyqmQ5VZv+0bRSJd/SYsFCcdw/OL8E/Ky9HpkE+HyYry9Tv34ivFnFsho3IMKgBVfZJEugTlzSfO66WrLoXeQm/yizaIUqFp+M1akw6EIIy0Kb5ept27gFs6hvyRQHkAjQKzyqMkBHI1bT/M7+SxF9GxkPTYQvO8fcq3dr6xmX9HCLnWgvGO53Wcpu/RugN2J+ZuBDZVNGclicLi5HqJI3n9q7YL6UDDyf5cakX9UlLLgo4oX1XOM5SEy0FNxoVcrmK1Lj8v/yAgXTAtXDouKMTvFOOp0KhCvIDy79JullXgTmCp05lUStYFeCuQ6CKI7wqQOTutirPurFj2St+Mr523jdwQvdsKGPM2ZWfQCctWORqdoHja0IBCyRXOcQ/uRHZ5UVFJUFBNNOtPDo57vkGr8ZADn8Ybrtdj2wzMUwvVAZXZ8W0vyRWd9WVGJiwJnwgrPLTb7uOgQsOX3bCDpHwBFNGXeOwcP4TTnUq4IGlFVmti4cys1AY8g7/c8kEokmKWMYwsIYnqUJWHMRGtA7GI02LX8G2wKQCvXPbc9WQhfxWB0b7zk2DdWw7GXqppoB8aCr0dP4lJEGS9CmhxSI8TSpvIeiQqAxcLfGjqY8FSDPfKIuTG0PRYseIo62oj0idm59tl15WSf1m1c71dEfysO+wGy3nc1GZ0VKwowZ+Muvht9sbwe2M5YbejXU+DPmCyC+49tW+Bdlw6OMzfUnmihmztmgtql01cyBm6AMiQS6GdDXmpoT1gQgQMCxRegvWCeETs0PTEjH0lngAAA";
@@ -224,6 +226,66 @@ function useStore(key, seed) {
   }, [key]);
   return [data, save];
 }
+
+// useFirebaseStore — Firebase Realtime Database-backed store.
+// Boots instantly from localStorage cache, then subscribes to Firebase for live sync.
+// Handles both direct values AND functional updaters correctly.
+function useFirebaseStore(fbPath, lsKey, seed) {
+  const [data, setDataState] = useState(() => {
+    const saved = lsGet(lsKey);
+    return saved !== null ? saved : seed;
+  });
+
+  useEffect(() => {
+    const dbRef = fbRef(db, fbPath);
+    const unsubscribe = onValue(dbRef, (snapshot) => {
+      const raw = snapshot.val();
+      if (raw === null || raw === undefined) {
+        // Nothing in Firebase yet — seed it from localStorage
+        const local = lsGet(lsKey);
+        if (local !== null) {
+          const payload = Array.isArray(local) && local.length === 0 ? null : local;
+          fbSet(dbRef, payload).catch(() => {});
+        }
+        return;
+      }
+      // Firebase may return array-like objects as plain objects — normalize them
+      let parsed = raw;
+      if (Array.isArray(seed) && raw && typeof raw === "object" && !Array.isArray(raw)) {
+        parsed = Object.values(raw);
+      }
+      // Only update state (and cache) when data actually changed
+      setDataState(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev;
+        lsSet(lsKey, parsed);
+        return parsed;
+      });
+    }, () => {}); // ignore Firebase errors — localStorage cache keeps app running
+    return unsubscribe;
+  }, [fbPath, lsKey]);
+
+  const save = useCallback((newDataOrFn) => {
+    const dbRef = fbRef(db, fbPath);
+    if (typeof newDataOrFn === "function") {
+      // Functional updater: resolve the new value, THEN persist both stores
+      setDataState(prev => {
+        const next = newDataOrFn(prev);
+        lsSet(lsKey, next);
+        const payload = Array.isArray(next) && next.length === 0 ? null : next;
+        fbSet(dbRef, payload).catch(() => {});
+        return next;
+      });
+    } else {
+      setDataState(newDataOrFn);
+      lsSet(lsKey, newDataOrFn);
+      const payload = Array.isArray(newDataOrFn) && newDataOrFn.length === 0 ? null : newDataOrFn;
+      fbSet(dbRef, payload).catch(() => {});
+    }
+  }, [fbPath, lsKey]);
+
+  return [data, save];
+}
+
 
 // ── Full data backup / restore ─────────────────────────────────────────────────
 const BACKUP_KEYS = [
@@ -1303,20 +1365,20 @@ export default function App(){
   const fmtFn=lang==="en"?fmtEn:fmt;
   const setLang=l=>{ setLangState(l); lsSet(STORAGE_KEYS.lang, l); };
 
-  const [users,setUsers]=useStore(STORAGE_KEYS.users,SEED_USERS);
+  const [users,setUsers]=useFirebaseStore("fys_data/users",STORAGE_KEYS.users,SEED_USERS);
   const [currentUser,setCurrentUser]=useState(()=>lsGet(STORAGE_KEYS.session));
   const [tab,setTab]=useState("dashboard");
   const [showProfile,setShowProfile]=useState(false);
   const [showCatMgr,setShowCatMgr]=useState(false);
   const [useBS,setUseBS]=useState(true);
 
-  const [members,setMembers]=useStore(STORAGE_KEYS.members,SEED_MEMBERS);
-  const [savings,setSavings]=useStore(STORAGE_KEYS.savings,SEED_SAVINGS);
-  const [loans,setLoans]=useStore(STORAGE_KEYS.loans,SEED_LOANS);
-  const [cash,setCash]=useStore(STORAGE_KEYS.cash,SEED_CASH);
-  const [bank,setBank]=useStore(STORAGE_KEYS.bank,SEED_BANK);
-  const [ie,setIE]=useStore(STORAGE_KEYS.ie,SEED_IE);
-  const [categories,setCategories]=useStore(STORAGE_KEYS.categories,SEED_CATEGORIES);
+  const [members,setMembers]=useFirebaseStore("fys_data/members",STORAGE_KEYS.members,SEED_MEMBERS);
+  const [savings,setSavings]=useFirebaseStore("fys_data/savings",STORAGE_KEYS.savings,SEED_SAVINGS);
+  const [loans,setLoans]=useFirebaseStore("fys_data/loans",STORAGE_KEYS.loans,SEED_LOANS);
+  const [cash,setCash]=useFirebaseStore("fys_data/cash",STORAGE_KEYS.cash,SEED_CASH);
+  const [bank,setBank]=useFirebaseStore("fys_data/bank",STORAGE_KEYS.bank,SEED_BANK);
+  const [ie,setIE]=useFirebaseStore("fys_data/ie",STORAGE_KEYS.ie,SEED_IE);
+  const [categories,setCategories]=useFirebaseStore("fys_data/categories",STORAGE_KEYS.categories,SEED_CATEGORIES);
   const [search,setSearch]=useState("");
 
   // Strictly two roles: "admin" = full access, "member" = read-only

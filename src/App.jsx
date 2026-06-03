@@ -227,10 +227,59 @@ function useStore(key, seed) {
   return [data, save];
 }
 
-// useFirebaseStore — Firebase Realtime Database-backed store.
-// Boots instantly from localStorage cache, then subscribes to Firebase for live sync.
-// Handles both direct values AND functional updaters correctly.
+// ── Sync engine — module-level so all store instances share one connection monitor ──
+const _sync = {
+  status: "synced",   // "synced" | "saving" | "offline" | "error"
+  listeners: new Set(),
+  queue: {},           // { [fbPath]: { data, ts } } — pending Firebase writes
+  initialized: false,
+};
+// Restore any queue that survived a page-reload while offline
+try { const _q = localStorage.getItem("fys_sync_q"); if (_q) _sync.queue = JSON.parse(_q); } catch {}
+
+function _setStatus(s) {
+  if (_sync.status === s) return;
+  _sync.status = s;
+  _sync.listeners.forEach(fn => fn(s));
+}
+function _saveQueue() {
+  try { localStorage.setItem("fys_sync_q", JSON.stringify(_sync.queue)); } catch {}
+}
+function _flushQueue() {
+  const paths = Object.keys(_sync.queue);
+  if (!paths.length) { _setStatus("synced"); return; }
+  _setStatus("saving");
+  let remaining = paths.length;
+  paths.forEach(path => {
+    const { data } = _sync.queue[path];
+    const payload = Array.isArray(data) && data.length === 0 ? null : data;
+    fbSet(fbRef(db, path), payload)
+      .then(() => {
+        delete _sync.queue[path]; _saveQueue();
+        if (--remaining === 0) _setStatus("synced");
+      })
+      .catch(() => { if (--remaining === 0) _setStatus("offline"); });
+  });
+}
+function _initSync() {
+  if (_sync.initialized) return;
+  _sync.initialized = true;
+  // Firebase .info/connected — fires on every connection/disconnection
+  onValue(fbRef(db, ".info/connected"), snap => {
+    if (snap.val() === true) _flushQueue();
+    else _setStatus("offline");
+  });
+  window.addEventListener("online",  _flushQueue);
+  window.addEventListener("offline", () => _setStatus("offline"));
+}
+
+// useFirebaseStore — Firebase Realtime Database-backed store with offline support.
+// • Boots instantly from localStorage cache (zero loading flash)
+// • Queues writes while offline; auto-flushes when reconnected (local wins)
+// • Ignores stale Firebase pushes when a local pending write exists for that path
 function useFirebaseStore(fbPath, lsKey, seed) {
+  _initSync(); // idempotent — runs once globally
+
   const [data, setDataState] = useState(() => {
     const saved = lsGet(lsKey);
     return saved !== null ? saved : seed;
@@ -241,7 +290,6 @@ function useFirebaseStore(fbPath, lsKey, seed) {
     const unsubscribe = onValue(dbRef, (snapshot) => {
       const raw = snapshot.val();
       if (raw === null || raw === undefined) {
-        // Nothing in Firebase yet — seed it from localStorage
         const local = lsGet(lsKey);
         if (local !== null) {
           const payload = Array.isArray(local) && local.length === 0 ? null : local;
@@ -249,41 +297,99 @@ function useFirebaseStore(fbPath, lsKey, seed) {
         }
         return;
       }
-      // Firebase may return array-like objects as plain objects — normalize them
+      // Normalise array-like Firebase objects
       let parsed = raw;
       if (Array.isArray(seed) && raw && typeof raw === "object" && !Array.isArray(raw)) {
         parsed = Object.values(raw);
       }
-      // Only update state (and cache) when data actually changed
+      // Skip if we have a pending write — local version is the source of truth
+      if (_sync.queue[fbPath] !== undefined) return;
       setDataState(prev => {
         if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev;
         lsSet(lsKey, parsed);
         return parsed;
       });
-    }, () => {}); // ignore Firebase errors — localStorage cache keeps app running
+    }, () => {});
     return unsubscribe;
   }, [fbPath, lsKey]);
 
   const save = useCallback((newDataOrFn) => {
     const dbRef = fbRef(db, fbPath);
+    const _write = (next) => {
+      lsSet(lsKey, next);
+      const payload = Array.isArray(next) && next.length === 0 ? null : next;
+      _setStatus("saving");
+      if (!navigator.onLine) {
+        _sync.queue[fbPath] = { data: next, ts: Date.now() };
+        _saveQueue();
+        _setStatus("offline");
+        return;
+      }
+      fbSet(dbRef, payload)
+        .then(() => {
+          delete _sync.queue[fbPath];
+          _saveQueue();
+          if (!Object.keys(_sync.queue).length) _setStatus("synced");
+        })
+        .catch(() => {
+          _sync.queue[fbPath] = { data: next, ts: Date.now() };
+          _saveQueue();
+          _setStatus("offline");
+        });
+    };
     if (typeof newDataOrFn === "function") {
-      // Functional updater: resolve the new value, THEN persist both stores
-      setDataState(prev => {
-        const next = newDataOrFn(prev);
-        lsSet(lsKey, next);
-        const payload = Array.isArray(next) && next.length === 0 ? null : next;
-        fbSet(dbRef, payload).catch(() => {});
-        return next;
-      });
+      setDataState(prev => { const next = newDataOrFn(prev); _write(next); return next; });
     } else {
       setDataState(newDataOrFn);
-      lsSet(lsKey, newDataOrFn);
-      const payload = Array.isArray(newDataOrFn) && newDataOrFn.length === 0 ? null : newDataOrFn;
-      fbSet(dbRef, payload).catch(() => {});
+      _write(newDataOrFn);
     }
   }, [fbPath, lsKey]);
 
   return [data, save];
+}
+
+// useSyncStatus — subscribe to the global sync status from any component
+function useSyncStatus() {
+  const [status, setStatus] = useState(() => _sync.status);
+  useEffect(() => {
+    _sync.listeners.add(setStatus);
+    setStatus(_sync.status);
+    return () => _sync.listeners.delete(setStatus);
+  }, []);
+  return status;
+}
+
+// SyncIndicator — compact pill badge wired to the global sync status
+function SyncIndicator() {
+  const status = useSyncStatus();
+  useEffect(() => {
+    if (document.getElementById("fys-spin-css")) return;
+    const s = document.createElement("style");
+    s.id = "fys-spin-css";
+    s.textContent = "@keyframes fys-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}";
+    document.head.appendChild(s);
+  }, []);
+  const cfg = {
+    synced:  { label:"Synced ✔",   color:"#166534", bg:"rgba(187,247,208,0.92)", border:"#86efac" },
+    saving:  { label:"Saving...",  color:"#92400e", bg:"rgba(253,230,138,0.92)", border:"#fcd34d" },
+    offline: { label:"Offline ⚡",  color:"#991b1b", bg:"rgba(254,202,202,0.92)", border:"#fca5a5" },
+    error:   { label:"Sync Error", color:"#991b1b", bg:"rgba(254,202,202,0.92)", border:"#fca5a5" },
+  }[status] || { label:"Synced ✔", color:"#166534", bg:"rgba(187,247,208,0.92)", border:"#86efac" };
+  return (
+    <div style={{
+      display:"inline-flex",alignItems:"center",gap:4,
+      padding:"3px 9px",borderRadius:"1rem",
+      background:cfg.bg,border:`1px solid ${cfg.border}`,
+      fontSize:"0.65rem",color:cfg.color,fontWeight:700,
+      fontFamily:"'Poppins',sans-serif",letterSpacing:"0.01em",flexShrink:0,
+      transition:"background 0.3s,border 0.3s,color 0.3s",
+    }}>
+      {status==="saving"&&(
+        <span style={{display:"inline-block",animation:"fys-spin 0.8s linear infinite",lineHeight:1,fontSize:"0.85rem"}}>↻</span>
+      )}
+      {cfg.label}
+    </div>
+  );
 }
 
 
@@ -1288,7 +1394,9 @@ function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
             👤 {lang==="np"?"सदस्य ड्यासबोर्ड":"Member Dashboard"} — {currentUser.displayName}
           </div>
         </div>
-        <div style={{display:"flex",gap:5,flexShrink:0}}>
+        <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
+          {/* Sync status indicator */}
+          <SyncIndicator/>
           <button type="button" onClick={()=>setLang(lang==="np"?"en":"np")}
             style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:"0.4rem",width:32,height:32,cursor:"pointer",color:"#fff",fontSize:"0.7rem",fontWeight:700,fontFamily:"'Poppins',sans-serif",display:"flex",alignItems:"center",justifyContent:"center"}}>
             {lang==="np"?"EN":"NP"}
@@ -1641,6 +1749,9 @@ export default function App(){
 
         {/* ── Right action buttons — icon-only, compact, single row ── */}
         <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+
+          {/* Sync status indicator */}
+          <SyncIndicator/>
 
           {/* Language: globe icon + short label (EN / NP) */}
           <button type="button"

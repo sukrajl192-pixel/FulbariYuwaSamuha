@@ -1005,14 +1005,19 @@ function ProfileModal({user,users,setUsers,onClose,t,lang}){
         </div>
         <div style={{marginTop:4,fontSize:"0.72rem",opacity:0.75}}>@{user.username}</div>
       </div>
-      <h4 style={{color:"#1b5e20",margin:"0 0 0.75rem",fontSize:"0.9rem"}}>{t.changeUsername}</h4>
-      <Field label={t.username} value={newUname} onChange={setNewUname}/>
-      <Btn onClick={saveU} icon="user">{t.save}</Btn>
-      <hr style={{border:"none",borderTop:"1px solid #e5e7eb",margin:"1rem 0"}}/>
-      <h4 style={{color:"#1b5e20",margin:"0 0 0.75rem",fontSize:"0.9rem"}}>{t.changePassword}</h4>
-      <Field label={t.currentPassword} type="password" value={curPass} onChange={setCurPass}/>
-      <Field label={t.newPassword} type="password" value={newPass} onChange={setNewPass}/>
-      <Btn onClick={saveP} icon="lock">{t.save}</Btn>
+      {/* Credential editing — admin only (defensive: members cannot reach this modal) */}
+      {user.role === "admin" && (
+        <>
+          <h4 style={{color:"#1b5e20",margin:"0 0 0.75rem",fontSize:"0.9rem"}}>{t.changeUsername}</h4>
+          <Field label={t.username} value={newUname} onChange={setNewUname}/>
+          <Btn onClick={saveU} icon="user">{t.save}</Btn>
+          <hr style={{border:"none",borderTop:"1px solid #e5e7eb",margin:"1rem 0"}}/>
+          <h4 style={{color:"#1b5e20",margin:"0 0 0.75rem",fontSize:"0.9rem"}}>{t.changePassword}</h4>
+          <Field label={t.currentPassword} type="password" value={curPass} onChange={setCurPass}/>
+          <Field label={t.newPassword} type="password" value={newPass} onChange={setNewPass}/>
+          <Btn onClick={saveP} icon="lock">{t.save}</Btn>
+        </>
+      )}
       {msg&&<div style={{marginTop:"1rem",padding:"0.6rem",background:"#dcfce7",color:"#166534",borderRadius:"0.5rem",fontSize:"0.85rem"}}>{msg}</div>}
 
       {/* ── Data Backup / Restore ── */}
@@ -1052,6 +1057,115 @@ function ProfileModal({user,users,setUsers,onClose,t,lang}){
       <p style={{fontSize:"0.72rem",color:"#9ca3af",margin:"0.4rem 0 0",textAlign:"center"}}>
         {lang==="np"?"⚠ रिस्टोर गर्दा हालको डाटा बदलिनेछ।":"⚠ Restore will overwrite current data with backup."}
       </p>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USER MANAGEMENT MODAL — Admin-only: create / edit / delete login accounts
+// ═══════════════════════════════════════════════════════════════════════════════
+function UserManagementModal({users,setUsers,currentUser,onClose,t,lang}){
+  const isEn=lang==="en";
+  const blank={id:"",username:"",password:"",role:"member",displayName:""};
+  const [form,setForm]=useState(blank);
+  const [mode,setMode]=useState("list"); // "list"|"add"|"edit"
+  const [msg,setMsg]=useState({text:"",ok:true});
+  const f=k=>v=>setForm(p=>({...p,[k]:v}));
+
+  const info=(text,ok=true)=>setMsg({text,ok});
+  const openAdd=()=>{setForm(blank);setMode("add");setMsg({text:"",ok:true});};
+  const openEdit=u=>{setForm({...u});setMode("edit");setMsg({text:"",ok:true});};
+  const cancel=()=>{setForm(blank);setMode("list");setMsg({text:"",ok:true});};
+
+  const saveAdd=()=>{
+    if(!form.username.trim()||!form.password){info(isEn?"Username and password are required.":"प्रयोगकर्ता नाम र पासवर्ड आवश्यक।",false);return;}
+    if(users.find(u=>u.username.toLowerCase()===form.username.trim().toLowerCase())){info(isEn?"Username already taken.":"यो प्रयोगकर्ता नाम पहिले नै छ।",false);return;}
+    const newUser={id:uid(),username:form.username.trim(),password:form.password,role:form.role,displayName:form.displayName.trim()||form.username.trim()};
+    setUsers(prev=>[...prev,newUser]);
+    info(isEn?"User created successfully.":"प्रयोगकर्ता सफलतापूर्वक बनाइयो।");
+    setForm(blank);setMode("list");
+  };
+
+  const saveEdit=()=>{
+    if(!form.username.trim()||!form.password){info(isEn?"Username and password are required.":"प्रयोगकर्ता नाम र पासवर्ड आवश्यक।",false);return;}
+    if(users.find(u=>u.username.toLowerCase()===form.username.trim().toLowerCase()&&u.id!==form.id)){info(isEn?"Username already taken.":"यो प्रयोगकर्ता नाम पहिले नै छ।",false);return;}
+    // Prevent removing the last admin role
+    if(form.role!=="admin"){
+      const otherAdmins=users.filter(u=>u.role==="admin"&&u.id!==form.id);
+      if(otherAdmins.length===0){info(isEn?"Cannot remove admin role — at least one admin required.":"कम्तीमा एक एडमिन चाहिन्छ।",false);return;}
+    }
+    setUsers(prev=>prev.map(u=>u.id===form.id?{...form,username:form.username.trim(),displayName:form.displayName.trim()||form.username.trim()}:u));
+    info(isEn?"Updated successfully.":"सफलतापूर्वक अपडेट गरियो।");
+    setMode("list");
+  };
+
+  const del=id=>{
+    if(id===currentUser.id){info(isEn?"Cannot delete your own account.":"आफ्नै खाता मेटाउन मिल्दैन।",false);return;}
+    const remaining=users.filter(u=>u.id!==id);
+    if(!remaining.some(u=>u.role==="admin")){info(isEn?"Cannot delete the last admin account.":"अन्तिम एडमिन खाता मेटाउन मिल्दैन।",false);return;}
+    setUsers(prev=>prev.filter(u=>u.id!==id));
+    info(isEn?"User deleted.":"प्रयोगकर्ता हटाइयो।");
+  };
+
+  const roleBadgeStyle=role=>({
+    background:role==="admin"?"#dcfce7":"#dbeafe",
+    color:role==="admin"?"#166534":"#1e40af",
+    border:`1px solid ${role==="admin"?"#bbf7d0":"#bfdbfe"}`,
+    borderRadius:"1rem",padding:"2px 10px",
+    fontSize:"0.72rem",fontWeight:700,flexShrink:0,
+  });
+
+  return(
+    <Modal title={`🔐 ${isEn?"User Management":"प्रयोगकर्ता व्यवस्थापन"}`} onClose={onClose} wide>
+      {msg.text&&(
+        <div style={{padding:"0.6rem 0.85rem",background:msg.ok?"#dcfce7":"#fee2e2",color:msg.ok?"#166534":"#dc2626",borderRadius:"0.5rem",fontSize:"0.85rem",marginBottom:"1rem",border:`1px solid ${msg.ok?"#bbf7d0":"#fecaca"}`}}>
+          {msg.text}
+        </div>
+      )}
+
+      {mode==="list"&&(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+            <span style={{fontSize:"0.82rem",color:"#6b7280"}}>{users.length} {isEn?"account(s)":"खाता"}</span>
+            <Btn onClick={openAdd} icon="plus">{isEn?"Add User":"नयाँ प्रयोगकर्ता"}</Btn>
+          </div>
+          {users.map(u=>(
+            <div key={u.id} style={{display:"flex",alignItems:"center",gap:"0.5rem",padding:"0.7rem 0.85rem",background:u.id===currentUser.id?"#f0fdf4":"#fafafa",borderRadius:"0.625rem",marginBottom:"0.5rem",border:`1px solid ${u.id===currentUser.id?"#bbf7d0":"#e5e7eb"}`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:"0.875rem",fontFamily:"inherit"}}>{u.displayName||u.username}</div>
+                <div style={{fontSize:"0.7rem",color:"#6b7280"}}>@{u.username} {u.id===currentUser.id&&<span style={{color:"#16a34a",fontWeight:600}}>{isEn?"· (You)":"· (तपाईं)"}</span>}</div>
+              </div>
+              <span style={roleBadgeStyle(u.role)}>{u.role==="admin"?"🛡 Admin":"👤 Member"}</span>
+              <button type="button" onClick={()=>openEdit(u)} style={{background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:"0.4rem",padding:"4px 10px",cursor:"pointer",fontSize:"0.75rem",color:"#0369a1",fontWeight:600,fontFamily:"inherit"}}>
+                {isEn?"Edit":"सम्पादन"}
+              </button>
+              {u.id!==currentUser.id&&(
+                <button type="button" onClick={()=>del(u.id)} style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:"0.4rem",padding:"4px 10px",cursor:"pointer",fontSize:"0.75rem",color:"#dc2626",fontWeight:600,fontFamily:"inherit"}}>
+                  {isEn?"Delete":"हटाउनुहोस्"}
+                </button>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+
+      {(mode==="add"||mode==="edit")&&(
+        <div>
+          <h4 style={{color:"#1b5e20",margin:"0 0 1rem",fontSize:"0.9rem"}}>
+            {mode==="add"?(isEn?"➕ New User":"➕ नयाँ प्रयोगकर्ता"):(isEn?"✏️ Edit User":"✏️ प्रयोगकर्ता सम्पादन")}
+          </h4>
+          <Field label={isEn?"Display Name":"प्रदर्शन नाम"} value={form.displayName} onChange={f("displayName")}/>
+          <Field label={isEn?"Username":"प्रयोगकर्ता नाम"} value={form.username} onChange={f("username")} required/>
+          <Field label={isEn?"Password":"पासवर्ड"} type="password" value={form.password} onChange={f("password")} required/>
+          <Field label={isEn?"Role":"भूमिका"} type="select" value={form.role} onChange={f("role")} options={[{value:"admin",label:"🛡 Admin / प्रशासक"},{value:"member",label:"👤 Member / सदस्य"}]}/>
+          <div style={{display:"flex",gap:"0.5rem",marginTop:"1rem"}}>
+            <Btn onClick={mode==="add"?saveAdd:saveEdit} icon="user">{t.save}</Btn>
+            <button type="button" onClick={cancel} style={{padding:"0.5rem 1rem",border:"1px solid #d1d5db",borderRadius:"0.5rem",background:"#f9fafb",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem",color:"#374151"}}>
+              {isEn?"Cancel":"रद्द"}
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -1370,6 +1484,7 @@ export default function App(){
   const [tab,setTab]=useState("dashboard");
   const [showProfile,setShowProfile]=useState(false);
   const [showCatMgr,setShowCatMgr]=useState(false);
+  const [showUserMgr,setShowUserMgr]=useState(false);
   const [useBS,setUseBS]=useState(true);
 
   const [members,setMembers]=useFirebaseStore("fys_data/members",STORAGE_KEYS.members,SEED_MEMBERS);
@@ -1594,6 +1709,17 @@ export default function App(){
             </button>
           )}
 
+          {/* User Management — admin only */}
+          {isAdmin&&(
+            <button type="button"
+              onClick={()=>setShowUserMgr(true)}
+              title={lang==="np"?"प्रयोगकर्ता व्यवस्थापन":"User Management"}
+              style={hBtn()}
+            >
+              <Icon name="lock" size={14} color="#fff"/>
+            </button>
+          )}
+
           {/* Profile — icon only; auth fully intact, name just not shown */}
           <button type="button"
             onClick={()=>setShowProfile(true)}
@@ -1696,6 +1822,7 @@ export default function App(){
       </nav>
 
       {showProfile&&<ProfileModal user={currentUser} users={users} setUsers={setUsers} onClose={()=>setShowProfile(false)} t={t} lang={lang}/>}
+      {showUserMgr&&isAdmin&&<UserManagementModal users={users} setUsers={setUsers} currentUser={currentUser} onClose={()=>setShowUserMgr(false)} t={t} lang={lang}/>}
       {showCatMgr&&isAdmin&&<CategoryManager categories={categories} setCategories={setCategories} onClose={()=>setShowCatMgr(false)} t={t} cash={cash} bank={bank} ie={ie} savings={savings} loans={loans}/>}
     </div>
   );

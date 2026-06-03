@@ -1129,7 +1129,7 @@ function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
         boxShadow:"0 2px 10px rgba(0,0,0,0.3)",overflow:"hidden",
       }}>
         <div style={{width:36,height:36,borderRadius:"50%",background:"#fff",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-          <span style={{fontSize:"1.1rem"}}>🌸</span>
+          <img src={LOGO_SRC} alt="Fulbari Yuwa Samuha Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>
         </div>
         <div style={{flex:"1 1 0",minWidth:0,overflow:"hidden"}}>
           <div style={{fontWeight:700,fontSize:"clamp(0.72rem,3.5vw,0.95rem)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>

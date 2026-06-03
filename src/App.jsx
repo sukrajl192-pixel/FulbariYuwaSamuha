@@ -938,33 +938,6 @@ function LoginScreen({users,onLogin}){
           प्रवेश गर्नुहोस् / Login
         </button>
 
-        {/* Demo credentials box */}
-        <div style={{
-          marginTop:"1.25rem",
-          padding:"0.85rem 1rem",
-          background:"#f0fdf4",
-          borderRadius:"0.75rem",
-          border:"1px solid #bbf7d0",
-          fontSize:"0.75rem",color:"#374151",
-        }}>
-          <div style={{fontWeight:700,color:"#1b5e20",marginBottom:"0.4rem"}}>
-            🔑 Demo Credentials:
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.4rem"}}>
-            <div style={{background:"#fff",borderRadius:"0.5rem",padding:"0.4rem 0.6rem",border:"1px solid #d1fae5"}}>
-              <div style={{fontWeight:600,color:"#1b5e20",fontSize:"0.72rem"}}>🛡 Admin</div>
-              <div style={{fontFamily:"'Poppins',sans-serif",fontSize:"0.7rem"}}>admin / admin123</div>
-            </div>
-            <div style={{background:"#fff",borderRadius:"0.5rem",padding:"0.4rem 0.6rem",border:"1px solid #dbeafe"}}>
-              <div style={{fontWeight:600,color:"#2563eb",fontSize:"0.72rem"}}>👤 Member</div>
-              <div style={{fontFamily:"'Poppins',sans-serif",fontSize:"0.7rem"}}>member / member123</div>
-            </div>
-          </div>
-          <div style={{marginTop:"0.5rem",color:"#6b7280",fontSize:"0.68rem",lineHeight:1.4}}>
-            Role selector is optional — system auto-detects from credentials.
-          </div>
-        </div>
-
       </div>
     </div>
   );

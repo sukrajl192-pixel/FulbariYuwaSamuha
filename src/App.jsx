@@ -3032,15 +3032,18 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   );
 }
 
-function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin}){
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 17: REPORTS DASHBOARD — Income/Expense + Asset/Liability + Monthly
+// ═══════════════════════════════════════════════════════════════════════════════
+function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin,categories}){
+  const [subTab,setSubTab]=useState("ie");
   const [mode,setMode]=useState("monthly");
 
-  // Dynamic BS year range: from 2079 up to current BS year + 2 (future-proof)
-  const currentBsYear = adToBS(today()).y || 2081;
-  const bsYearStart = 2079;
-  const bsYearEnd = Math.max(currentBsYear + 2, 2090);
-  const bsYears = Array.from({length:bsYearEnd-bsYearStart+1},(_,i)=>bsYearStart+i);
-
+  // BS date selectors
+  const currentBsYear=adToBS(today()).y||2081;
+  const bsYearStart=2079;
+  const bsYearEnd=Math.max(currentBsYear+2,2090);
+  const bsYears=Array.from({length:bsYearEnd-bsYearStart+1},(_,i)=>bsYearStart+i);
   const [selY,setSelY]=useState(currentBsYear);
   const [selM,setSelM]=useState(adToBS(today()).m||1);
   const bsMOpts=(lang==="en"?BS_MONTHS_EN:BS_MONTHS_NP).map((m,i)=>({value:i+1,label:m}));
@@ -3050,103 +3053,314 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
     return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);
   });
 
-  const fS=filterBS(savings),fL=filterBS(loans),fIE=filterBS(ie);
+  // ── Income/Expense ─────────────────────────────────────────────────────────
+  const fIE=filterBS(ie);
+  const totalInc=fIE.reduce((a,x)=>a+(x.income||0),0);
+  const totalExp=fIE.reduce((a,x)=>a+(x.expense||0),0);
+  const profitLoss=totalInc-totalExp;
+
+  // Category breakdown (filtered period)
+  const getLabel=k=>getCatLabel(k)||catLabel(k,t);
+  const allCatKeys=[...(categories.income||[]),...(categories.expense||[])];
+  const catBreakdown=allCatKeys.map(k=>{
+    const inc=fIE.filter(r=>r.category===k).reduce((s,r)=>s+(r.income||0),0);
+    const exp=fIE.filter(r=>r.category===k).reduce((s,r)=>s+(r.expense||0),0);
+    return{key:k,label:getLabel(k),inc,exp,net:inc-exp};
+  }).filter(c=>c.inc>0||c.exp>0);
+
+  // ── Asset/Liability (balance sheet — all-time snapshot) ─────────────────────
+  const cashAsset=cashBal;
+  const bankAsset=bankBal;
+  const loansAsset=totalLoanOut;
+  const totalAssets=cashAsset+bankAsset+loansAsset;
+  const membersShare=totalSaving;
+  const cumulativeProfit=ie.reduce((a,x)=>a+(x.income||0)-(x.expense||0),0);
+  const totalLiabilities=membersShare+cumulativeProfit;
+  const balanceDiff=totalAssets-totalLiabilities;
+
+  // ── Monthly summary ─────────────────────────────────────────────────────────
+  const fS=filterBS(savings);
+  const fL=filterBS(loans);
   const rSaving=fS.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
   const rLoanIssued=fL.reduce((a,l)=>a+(l.loanAmount||0),0);
   const rPrincipal=fL.reduce((a,l)=>a+(l.principalPaid||0),0);
   const rInterest=fL.reduce((a,l)=>a+(l.interestPaid||0),0);
-  const rIncome=fIE.reduce((a,x)=>a+(x.income||0),0);
-  const rExpense=fIE.reduce((a,x)=>a+(x.expense||0),0);
-  const rNet=rIncome-rExpense;
-
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
   const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
-
-  const row=(lbl,val,hi=false)=>(
-    <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:hi?"#1b5e20":"transparent",color:hi?"#fff":"#111827",borderBottom:hi?"none":"1px solid #f3f4f6",fontWeight:hi?700:500,borderRadius:hi?"0.5rem":0,fontSize:"0.9rem"}}>
-      <span>{lbl}</span><span>{val}</span>
-    </div>
-  );
-
   const sigNames=lang==="np"?["अध्यक्ष","उपाध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Vice-President","Secretary","Treasurer"];
 
+  // Print HTML
   const printHTML=`
     <h2>${mode==="monthly"?t.monthlyReport:t.yearlyReport} — ${period}</h2>
-    <table>
-      <thead><tr><th>${lang==="np"?"विवरण":"Description"}</th><th style="text-align:right">${lang==="np"?"रकम":"Amount"}</th></tr></thead>
-      <tbody>
-        <tr><td>${t.totalSaving}</td><td style="text-align:right">${fmtFn(rSaving)}</td></tr>
-        <tr><td>${lang==="np"?"ऋण जारी":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
-        <tr><td>${lang==="np"?"साँवा उठान":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
-        <tr><td>${t.interestIncome}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
-        <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(rIncome)}</td></tr>
-        <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(rExpense)}</td></tr>
-        <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(rNet)}</td></tr>
-        <tr><td>${t.cashBalance} (${lang==="np"?"सबै":"All"})</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
-        <tr><td>${t.bankBalance} (${lang==="np"?"सबै":"All"})</td><td style="text-align:right">${fmtFn(bankBal)}</td></tr>
-        <tr class="total-row"><td>${t.totalFund}</td><td style="text-align:right">${fmtFn(totalFund)}</td></tr>
-        <tr><td>${t.totalMembers}</td><td style="text-align:right">${members.length}</td></tr>
-      </tbody>
-    </table>
-    <div class="sig-area">
-      ${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}
-    </div>`;
+    <table><thead><tr><th>${lang==="np"?"विवरण":"Description"}</th><th style="text-align:right">${lang==="np"?"रकम":"Amount"}</th></tr></thead>
+    <tbody>
+      <tr><td>${t.totalSaving}</td><td style="text-align:right">${fmtFn(rSaving)}</td></tr>
+      <tr><td>${lang==="np"?"ऋण जारी":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
+      <tr><td>${lang==="np"?"साँवा उठान":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
+      <tr><td>${t.interestIncome}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
+      <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(totalInc)}</td></tr>
+      <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(totalExp)}</td></tr>
+      <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(profitLoss)}</td></tr>
+      <tr><td>${t.cashBalance}</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
+      <tr><td>${t.bankBalance}</td><td style="text-align:right">${fmtFn(bankBal)}</td></tr>
+      <tr class="total-row"><td>${t.totalFund}</td><td style="text-align:right">${fmtFn(totalFund)}</td></tr>
+      <tr><td>${t.totalMembers}</td><td style="text-align:right">${members.length}</td></tr>
+    </tbody></table>
+    <div class="sig-area">${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}</div>`;
+
+  // Shared selector style
+  const selSt={padding:"0.4rem 0.65rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.82rem",background:"#fff",outline:"none"};
+
+  const subTabs=[
+    {id:"ie",      label:lang==="np"?"आय-व्यय":"Income/Exp",   icon:"income",  color:"#7c3aed"},
+    {id:"balance", label:lang==="np"?"सम्पत्ति":"Assets",        icon:"bank",    color:"#2563eb"},
+    {id:"monthly", label:lang==="np"?"मासिक":"Monthly",         icon:"report",  color:"#1b5e20"},
+  ];
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>📄 {t.report}</h2>
-        <Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>
+        {subTab==="monthly"&&<Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>}
       </div>
-      <div style={{display:"flex",gap:"0.5rem",marginBottom:"1rem"}}>
-        {["monthly","yearly"].map(m=>(
-          <button key={m} onClick={()=>setMode(m)} style={{padding:"0.45rem 1rem",border:"1.5px solid",borderColor:mode===m?"#1b5e20":"#d1d5db",borderRadius:"0.5rem",background:mode===m?"#1b5e20":"#fff",color:mode===m?"#fff":"#374151",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:"0.8rem"}}>
-            {m==="monthly"?t.monthlyReport:t.yearlyReport}
+
+      {/* Sub-tabs */}
+      <div style={{display:"flex",gap:"0.35rem",marginBottom:"0.85rem",background:"#f0fdf4",borderRadius:"0.75rem",padding:"0.35rem"}}>
+        {subTabs.map(s=>(
+          <button key={s.id} type="button" onClick={()=>setSubTab(s.id)} style={{
+            flex:1,padding:"0.45rem 0.25rem",border:"none",cursor:"pointer",
+            borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.75rem",
+            fontWeight:subTab===s.id?700:500,
+            background:subTab===s.id?"#fff":"transparent",
+            color:subTab===s.id?s.color:"#6b7280",
+            boxShadow:subTab===s.id?"0 1px 4px rgba(0,0,0,0.1)":"none",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:4,
+            transition:"all 0.15s",
+          }}>
+            <Icon name={s.icon} size={13} color={subTab===s.id?s.color:"#9ca3af"}/>
+            {s.label}
           </button>
         ))}
       </div>
-      <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap",marginBottom:"1rem"}}>
-        <select value={selY} onChange={e=>setSelY(+e.target.value)} style={{padding:"0.45rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.85rem"}}>
-          {bsYears.map(y=><option key={y} value={y}>{y} {t.bsLabel}</option>)}
-        </select>
-        {mode==="monthly"&&(
-          <select value={selM} onChange={e=>setSelM(+e.target.value)} style={{padding:"0.45rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.85rem"}}>
-            {bsMOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        )}
-      </div>
-      <div style={{background:"#fff",borderRadius:"1rem",boxShadow:"0 4px 16px rgba(0,0,0,0.08)",overflow:"hidden",marginBottom:"1rem"}}>
-        <div style={{background:"linear-gradient(135deg,#1b5e20,#2e7d32)",padding:"1rem 1.25rem",color:"#fff",textAlign:"center"}}>
-          <div style={{fontSize:"1.1rem",fontWeight:700}}>{t.appName}</div>
-          <div style={{fontSize:"0.8rem",opacity:0.85}}>{mode==="monthly"?t.monthlyReport:t.yearlyReport} — {period}</div>
-        </div>
-        <div>
-          {row(t.totalSaving,fmtFn(rSaving))}
-          {row(lang==="np"?"ऋण जारी":"Loan Issued",fmtFn(rLoanIssued))}
-          {row(lang==="np"?"साँवा उठान":"Principal Recovered",fmtFn(rPrincipal))}
-          {row(t.interestIncome,fmtFn(rInterest))}
-          {row(t.incomeLabel,fmtFn(rIncome))}
-          {row(t.expenseLabel,fmtFn(rExpense))}
-          {row(t.netBalance,fmtFn(rNet))}
-          <div style={{borderTop:"2px solid #e5e7eb",padding:"0.25rem 0"}}>
-            {row(`${t.cashBalance} (${lang==="np"?"सबै":"All"})`,fmtFn(cashBal))}
-            {row(`${t.bankBalance} (${lang==="np"?"सबै":"All"})`,fmtFn(bankBal))}
-          </div>
-        </div>
-        <div style={{padding:"0.75rem"}}>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"0.75rem 1rem",background:"#1b5e20",color:"#fff",borderRadius:"0.5rem",fontWeight:700,fontSize:"1rem"}}>
-            <span>{t.totalFund}</span><span>{fmtFn(totalFund)}</span>
-          </div>
-        </div>
-        <div style={{padding:"0 1rem 1rem"}}>
-          <div style={{fontSize:"0.8rem",color:"#6b7280",marginBottom:"0.5rem",fontWeight:600}}>{lang==="np"?"हस्ताक्षर क्षेत्र":"Signature Area"}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem"}}>
-            {sigNames.map(x=>(
-              <div key={x} style={{borderTop:"2px solid #d1d5db",paddingTop:"0.4rem",fontSize:"0.8rem",color:"#6b7280",textAlign:"center"}}>{x}</div>
+
+      {/* Period selector (shared) */}
+      {subTab!=="balance"&&(
+        <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"0.85rem",alignItems:"center"}}>
+          <div style={{display:"flex",gap:"0.2rem",background:"#f3f4f6",borderRadius:"0.5rem",padding:"0.2rem"}}>
+            {["monthly","yearly"].map(m=>(
+              <button key={m} type="button" onClick={()=>setMode(m)} style={{padding:"0.3rem 0.7rem",border:"none",borderRadius:"0.375rem",background:mode===m?"#fff":"transparent",color:mode===m?"#1b5e20":"#6b7280",cursor:"pointer",fontFamily:"inherit",fontWeight:mode===m?700:500,fontSize:"0.78rem",boxShadow:mode===m?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
+                {m==="monthly"?t.monthlyReport:t.yearlyReport}
+              </button>
             ))}
           </div>
+          <select value={selY} onChange={e=>setSelY(+e.target.value)} style={selSt}>
+            {bsYears.map(y=><option key={y} value={y}>{y} {t.bsLabel}</option>)}
+          </select>
+          {mode==="monthly"&&(
+            <select value={selM} onChange={e=>setSelM(+e.target.value)} style={selSt}>
+              {bsMOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
+          <span style={{fontSize:"0.72rem",color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap"}}>{period}</span>
         </div>
-      </div>
+      )}
+
+      {/* ══ INCOME/EXPENSE TAB ══ */}
+      {subTab==="ie"&&(
+        <div>
+          {/* 3 summary cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.5rem",marginBottom:"0.85rem"}}>
+            {[
+              {label:t.incomeLabel,  val:totalInc,   color:"#16a34a",bg:"#f0fdf4",border:"#bbf7d0"},
+              {label:t.expenseLabel, val:totalExp,   color:"#dc2626",bg:"#fff7ed",border:"#fed7aa"},
+              {label:t.netBalance,   val:profitLoss, color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2",border:profitLoss>=0?"#bfdbfe":"#fecaca"},
+            ].map((c,i)=>(
+              <div key={i} style={{background:c.bg,borderRadius:"0.75rem",padding:"0.75rem 0.5rem",textAlign:"center",border:`1px solid ${c.border}`}}>
+                <div style={{fontSize:"0.62rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{c.label}</div>
+                <div style={{fontSize:"0.95rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Category breakdown */}
+          <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
+            <div style={{background:"linear-gradient(135deg,#5b21b6,#7c3aed)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontWeight:700,fontSize:"0.85rem"}}>{lang==="np"?"📂 श्रेणीगत विवरण":"📂 Category Breakdown"}</div>
+              <div style={{fontSize:"0.72rem",opacity:0.8}}>{period}</div>
+            </div>
+            {catBreakdown.length===0?(
+              <div style={{padding:"1.5rem",textAlign:"center",color:"#9ca3af",fontSize:"0.85rem"}}>{t.noData}</div>
+            ):(
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.82rem"}}>
+                  <thead>
+                    <tr style={{background:"#f9fafb"}}>
+                      <th style={{padding:"0.5rem 1rem",textAlign:"left",fontWeight:700,color:"#6b7280",fontSize:"0.72rem",whiteSpace:"nowrap"}}>{t.category}</th>
+                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#16a34a",fontSize:"0.72rem"}}>{t.incomeLabel}</th>
+                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#dc2626",fontSize:"0.72rem"}}>{t.expenseLabel}</th>
+                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#374151",fontSize:"0.72rem"}}>{t.netBalance}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catBreakdown.map((c,i)=>(
+                      <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}>
+                        <td style={{padding:"0.55rem 1rem",color:"#374151",fontWeight:500}}>{c.label}</td>
+                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:"#16a34a",fontWeight:c.inc>0?600:400}}>{c.inc>0?fmtFn(c.inc):"—"}</td>
+                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:"#dc2626",fontWeight:c.exp>0?600:400}}>{c.exp>0?fmtFn(c.exp):"—"}</td>
+                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:c.net>=0?"#2563eb":"#dc2626",fontWeight:700}}>{fmtFn(c.net)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:"#f0fdf4",fontWeight:700}}>
+                      <td style={{padding:"0.6rem 1rem",color:"#111827"}}>{lang==="np"?"जम्मा":"Total"}</td>
+                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:"#16a34a"}}>{fmtFn(totalInc)}</td>
+                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:"#dc2626"}}>{fmtFn(totalExp)}</td>
+                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:profitLoss>=0?"#2563eb":"#dc2626"}}>{fmtFn(profitLoss)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══ ASSET/LIABILITY TAB ══ */}
+      {subTab==="balance"&&(
+        <div>
+          {/* Balance indicator */}
+          <div style={{background:`linear-gradient(135deg,${Math.abs(balanceDiff)<1?"#166534,#16a34a":"#991b1b,#dc2626"})`,borderRadius:"0.875rem",padding:"1rem 1.25rem",marginBottom:"0.85rem",color:"#fff",textAlign:"center"}}>
+            <div style={{fontSize:"0.72rem",fontWeight:600,opacity:0.85,marginBottom:3,letterSpacing:"0.04em"}}>{lang==="np"?"सम्पत्ति — दायित्व":"ASSETS — LIABILITIES"}</div>
+            <div style={{fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.01em"}}>{fmtFn(Math.abs(balanceDiff))}</div>
+            <div style={{fontSize:"0.7rem",opacity:0.8,marginTop:3}}>{Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):(balanceDiff>0?(lang==="np"?"▲ अतिरिक्त सम्पत्ति":"▲ Asset surplus"):(lang==="np"?"▼ घाटा":"▼ Deficit"))}</div>
+          </div>
+
+          {/* Assets card */}
+          <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",marginBottom:"0.75rem"}}>
+            <div style={{background:"linear-gradient(135deg,#065f46,#059669)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:"0.88rem"}}>🏛️ {lang==="np"?"सम्पत्ति":"Assets"}</span>
+              <span style={{fontWeight:800,fontSize:"0.95rem"}}>{fmtFn(totalAssets)}</span>
+            </div>
+            {[
+              {label:lang==="np"?"नगद (Cash)":"Cash",        val:cashAsset,  note:lang==="np"?"नगद किताब":"Cash Book"},
+              {label:lang==="np"?"बैंक (Bank)":"Bank",        val:bankAsset,  note:lang==="np"?"बैंक किताब":"Bank Book"},
+              {label:lang==="np"?"ऋण बाँकी (Loan O/S)":"Loan Outstanding",val:loansAsset,note:lang==="np"?"ऋण लेजर":"Loan Ledger"},
+            ].map((r,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #f0fdf4"}}>
+                <div>
+                  <div style={{fontSize:"0.83rem",color:"#374151",fontWeight:500}}>{r.label}</div>
+                  <div style={{fontSize:"0.68rem",color:"#9ca3af"}}>{r.note}</div>
+                </div>
+                <span style={{fontWeight:700,color:"#065f46",fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#ecfdf5",fontWeight:700,fontSize:"0.9rem"}}>
+              <span style={{color:"#065f46"}}>{lang==="np"?"जम्मा सम्पत्ति":"Total Assets"}</span>
+              <span style={{color:"#065f46"}}>{fmtFn(totalAssets)}</span>
+            </div>
+          </div>
+
+          {/* Liabilities card */}
+          <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",marginBottom:"0.75rem"}}>
+            <div style={{background:"linear-gradient(135deg,#7c2d12,#dc2626)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:"0.88rem"}}>📑 {lang==="np"?"पुँजी तथा दायित्व":"Capital & Liabilities"}</span>
+              <span style={{fontWeight:800,fontSize:"0.95rem"}}>{fmtFn(totalLiabilities)}</span>
+            </div>
+            {[
+              {label:lang==="np"?"सदस्यको बचत (Members Share)":"Members' Share Capital", val:membersShare, note:lang==="np"?"बचत लेजर":"Savings Ledger"},
+              {label:cumulativeProfit>=0?(lang==="np"?"जोड: नाफा (Add: Profit)":"Add: Profit"):(lang==="np"?"घटाउ: घाटा (Less: Loss)":"Less: Loss"), val:Math.abs(cumulativeProfit), note:lang==="np"?"आय-व्यय":"Income/Expense", profit:cumulativeProfit},
+            ].map((r,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #fff1f2"}}>
+                <div>
+                  <div style={{fontSize:"0.83rem",color:"#374151",fontWeight:500}}>{r.label}</div>
+                  <div style={{fontSize:"0.68rem",color:"#9ca3af"}}>{r.note}</div>
+                </div>
+                <span style={{fontWeight:700,color:r.profit!==undefined?(r.profit>=0?"#16a34a":"#dc2626"):"#7c2d12",fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#fff1f2",fontWeight:700,fontSize:"0.9rem"}}>
+              <span style={{color:"#7c2d12"}}>{lang==="np"?"जम्मा पुँजी/दायित्व":"Total Capital & Liabilities"}</span>
+              <span style={{color:"#7c2d12"}}>{fmtFn(totalLiabilities)}</span>
+            </div>
+          </div>
+
+          {/* Balance equation */}
+          <div style={{background:Math.abs(balanceDiff)<1?"#f0fdf4":"#fef3c7",borderRadius:"0.75rem",padding:"0.75rem 1rem",border:`1px solid ${Math.abs(balanceDiff)<1?"#bbf7d0":"#fcd34d"}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:700,fontSize:"0.85rem",color:Math.abs(balanceDiff)<1?"#166534":"#92400e"}}>{lang==="np"?"सम्पत्ति = पुँजी + दायित्व":"Assets = Capital + Liabilities"}</span>
+            <span style={{fontWeight:800,color:Math.abs(balanceDiff)<1?"#16a34a":"#d97706",fontSize:"0.88rem"}}>{Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):fmtFn(balanceDiff)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MONTHLY REPORT TAB ══ */}
+      {subTab==="monthly"&&(
+        <div>
+          {/* Cash Flow quick cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.5rem",marginBottom:"0.85rem"}}>
+            {[
+              {label:t.incomeLabel,  val:totalInc,   color:"#16a34a",bg:"#f0fdf4"},
+              {label:t.expenseLabel, val:totalExp,   color:"#dc2626",bg:"#fff7ed"},
+              {label:lang==="np"?"नाफा/घाटा":"Profit/Loss",val:profitLoss,color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2"},
+            ].map((c,i)=>(
+              <div key={i} style={{background:c.bg,borderRadius:"0.65rem",padding:"0.6rem 0.5rem",textAlign:"center"}}>
+                <div style={{fontSize:"0.6rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{c.label}</div>
+                <div style={{fontSize:"0.88rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Printable report card */}
+          <div style={{background:"#fff",borderRadius:"1rem",boxShadow:"0 4px 16px rgba(0,0,0,0.08)",overflow:"hidden",marginBottom:"1rem"}}>
+            <div style={{background:"linear-gradient(135deg,#1b5e20,#2e7d32)",padding:"1rem 1.25rem",color:"#fff",textAlign:"center"}}>
+              <div style={{fontSize:"1.05rem",fontWeight:700}}>{t.appName}</div>
+              <div style={{fontSize:"0.78rem",opacity:0.85,marginTop:2}}>{mode==="monthly"?t.monthlyReport:t.yearlyReport} — {period}</div>
+            </div>
+            <div>
+              {[
+                [t.totalSaving,                                   fmtFn(rSaving)],
+                [lang==="np"?"ऋण जारी":"Loan Issued",            fmtFn(rLoanIssued)],
+                [lang==="np"?"साँवा उठान":"Principal Recovered",  fmtFn(rPrincipal)],
+                [t.interestIncome,                                fmtFn(rInterest)],
+                [t.incomeLabel,                                   fmtFn(totalInc)],
+                [t.expenseLabel,                                  fmtFn(totalExp)],
+              ].map(([l,v],i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
+                  <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"0.7rem 1rem",background:profitLoss>=0?"#1b5e20":"#dc2626",color:"#fff",fontWeight:700,fontSize:"0.95rem"}}>
+                <span>{t.netBalance}</span><span>{fmtFn(profitLoss)}</span>
+              </div>
+              <div style={{borderTop:"2px solid #e5e7eb"}}>
+                {[
+                  [t.cashBalance, fmtFn(cashBal)],
+                  [t.bankBalance, fmtFn(bankBal)],
+                  [t.totalMembers+":", members.length],
+                ].map(([l,v],i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
+                    <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{padding:"0.75rem"}}>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"0.75rem 1rem",background:"#1b5e20",color:"#fff",borderRadius:"0.5rem",fontWeight:700,fontSize:"1rem"}}>
+                <span>{t.totalFund}</span><span>{fmtFn(totalFund)}</span>
+              </div>
+            </div>
+            <div style={{padding:"0 1rem 1rem"}}>
+              <div style={{fontSize:"0.78rem",color:"#6b7280",marginBottom:"0.5rem",fontWeight:600}}>{lang==="np"?"हस्ताक्षर क्षेत्र":"Signature Area"}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem"}}>
+                {sigNames.map(x=>(
+                  <div key={x} style={{borderTop:"2px solid #d1d5db",paddingTop:"0.4rem",fontSize:"0.78rem",color:"#6b7280",textAlign:"center"}}>{x}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

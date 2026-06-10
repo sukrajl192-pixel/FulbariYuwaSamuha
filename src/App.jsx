@@ -1942,7 +1942,7 @@ function FinancePage({savings,setSavings,loans,setLoans,ie,setIE,members,memberO
           </button>
         ))}
       </div>
-      {sub==="saving"&&<SavingLedger {...{savings,setSavings,members,memberOptions,getMember,...sp}}/>}
+      {sub==="saving"&&<SavingLedger {...{savings,setSavings,loans,members,memberOptions,getMember,...sp}}/>}
       {sub==="loan"&&<LoanLedger {...{loans,setLoans,members,memberOptions,getMember,...sp}}/>}
       {sub==="ie"&&<IncomeExpense {...{ie,setIE,...sp}}/>}
     </div>
@@ -2210,17 +2210,32 @@ function Members({members,setMembers,search,setSearch,lang,t,useBS,fmtFn,isAdmin
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 12: SAVING LEDGER
+// SECTION 12: SAVING LEDGER — with member name search + summary card
 // ═══════════════════════════════════════════════════════════════════════════════
-function SavingLedger({savings,setSavings,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin}){
+function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin}){
   const [modal,setModal]=useState(null);
   const [filterMember,setFilterMember]=useState("");
+  const [searchText,setSearchText]=useState("");
+  const [showDrop,setShowDrop]=useState(false);
   const blank={memberId:"",date:today(),particulars:"मासिक बचत",deposit:0,withdraw:0,signature:""};
   const [form,setForm]=useState(blank);
   const f=k=>v=>setForm(p=>({...p,[k]:v}));
   const withBal=rows=>{let b=0;return rows.map(r=>{b+=(r.deposit||0)-(r.withdraw||0);return{...r,balance:b};});};
   const filtered=(filterMember?savings.filter(s=>s.memberId===filterMember):savings).sort((a,b)=>a.date.localeCompare(b.date));
   const rows=withBal(filtered).map(r=>({...r,dateDisp:displayDate(r.date,lang,useBS),memberName:getMemberDisplayName(getMember(r.memberId),lang)}));
+
+  // Summary for selected member
+  const selMember=filterMember?members.find(m=>m.id===filterMember):null;
+  const selMemberName=selMember?getMemberDisplayName(selMember,lang):"";
+  const memberDeposits=filtered.reduce((s,r)=>s+(r.deposit||0),0);
+  const memberWithdrawals=filtered.reduce((s,r)=>s+(r.withdraw||0),0);
+  const memberLateFees=filterMember?(loans||[]).filter(l=>l.memberId===filterMember).reduce((s,l)=>s+(l.lateFee||0),0):0;
+
+  // Live search dropdown
+  const matchedMembers=searchText
+    ?members.filter(m=>(m.name||"").toLowerCase().includes(searchText.toLowerCase())||(m.nameEn||"").toLowerCase().includes(searchText.toLowerCase()))
+    :members;
+
   const save=()=>{
     if(!form.memberId){alert(t.selectMember);return;}
     const en={...form,deposit:+form.deposit,withdraw:+form.withdraw,modifiedAt:new Date().toISOString()};
@@ -2231,6 +2246,8 @@ function SavingLedger({savings,setSavings,members,memberOptions,getMember,lang,t
   const del=id=>{setSavings(savings.filter(s=>s.id!==id));};
   const cols=[{key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars,wrap:true},{key:"deposit",label:t.deposit,fmt:true,num:true,green:true},{key:"withdraw",label:t.withdraw,fmt:true,num:true,red:true},{key:"balance",label:t.balance,fmt:true,num:true},{key:"signature",label:t.signature}];
   const printHTML=`<table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
@@ -2241,10 +2258,54 @@ function SavingLedger({savings,setSavings,members,memberOptions,getMember,lang,t
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
       </div>
-      <select value={filterMember} onChange={e=>setFilterMember(e.target.value)} style={{padding:"0.5rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.85rem",width:"100%",maxWidth:260,marginBottom:"0.75rem"}}>
-        <option value="">{t.allMembers}</option>
-        {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-      </select>
+
+      {/* Member name search */}
+      <div style={{position:"relative",marginBottom:"0.75rem"}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowDrop(false);}}>
+        <input
+          value={filterMember?selMemberName:searchText}
+          onChange={e=>{setSearchText(e.target.value);setFilterMember("");setShowDrop(true);}}
+          onFocus={()=>setShowDrop(true)}
+          placeholder={lang==="np"?"सदस्यको नाम खोज्नुहोस्...":"Search member by name..."}
+          style={srchStyle}
+        />
+        {filterMember&&(
+          <button type="button" onClick={()=>{setFilterMember("");setSearchText("");}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:"1.1rem",color:"#6b7280",lineHeight:1}}>×</button>
+        )}
+        {showDrop&&!filterMember&&(
+          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #d1d5db",borderRadius:"0.5rem",zIndex:50,maxHeight:180,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.12)"}}>
+            <div onMouseDown={()=>{setFilterMember("");setSearchText("");setShowDrop(false);}} style={{padding:"0.45rem 0.75rem",cursor:"pointer",fontSize:"0.82rem",color:"#6b7280",borderBottom:"1px solid #f3f4f6",background:"#f9fafb",fontWeight:600}}>{t.allMembers}</div>
+            {matchedMembers.map(m=>(
+              <div key={m.id} onMouseDown={()=>{setFilterMember(m.id);setSearchText("");setShowDrop(false);}}
+                onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"} onMouseLeave={e=>e.currentTarget.style.background="#fff"}
+                style={{padding:"0.45rem 0.75rem",cursor:"pointer",fontSize:"0.83rem",color:"#111827"}}>
+                {getMemberDisplayName(m,lang)}
+              </div>
+            ))}
+            {matchedMembers.length===0&&<div style={{padding:"0.75rem",color:"#9ca3af",fontSize:"0.82rem",textAlign:"center"}}>{lang==="np"?"सदस्य भेटिएन":"No member found"}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Savings summary card */}
+      {filterMember&&(
+        <div style={{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",borderRadius:"0.75rem",padding:"0.75rem 1rem",marginBottom:"0.75rem",border:"1px solid #bbf7d0"}}>
+          <div style={{fontWeight:700,color:"#166534",fontSize:"0.83rem",marginBottom:"0.5rem"}}>📊 {selMemberName} — {lang==="np"?"बचत सारांश":"Savings Summary"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:"0.4rem"}}>
+            {[
+              {label:t.deposit,  value:fmtFn(memberDeposits),               color:"#16a34a"},
+              {label:t.withdraw, value:fmtFn(memberWithdrawals),             color:"#dc2626"},
+              {label:t.balance,  value:fmtFn(memberDeposits-memberWithdrawals), color:"#2563eb"},
+              ...(memberLateFees>0?[{label:t.lateFee, value:fmtFn(memberLateFees), color:"#d97706"}]:[]),
+            ].map((item,i)=>(
+              <div key={i} style={{background:"#fff",borderRadius:"0.5rem",padding:"0.4rem 0.6rem",borderLeft:`3px solid ${item.color}`}}>
+                <div style={{fontSize:"0.65rem",color:"#6b7280",fontWeight:600}}>{item.label}</div>
+                <div style={{fontSize:"0.85rem",fontWeight:700,color:item.color}}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
         <Table t={t} cols={cols} rows={rows} onEdit={r=>{setForm(r);setModal("edit");}} onDelete={del} isAdmin={isAdmin}/>
       </div>
@@ -2268,18 +2329,45 @@ function SavingLedger({savings,setSavings,members,memberOptions,getMember,lang,t
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 13: LOAN LEDGER
-// ═══════════════════════════════════════════════════════════════════════════════
+
 function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin}){
   const [modal,setModal]=useState(null);
   const [filterMember,setFilterMember]=useState("");
+  const [searchText,setSearchText]=useState("");
+  const [showDrop,setShowDrop]=useState(false);
   const blank={memberId:"",date:today(),particulars:"व्यापार ऋण",loanAmount:0,principalPaid:0,interestPaid:0,lateFee:0,signature:""};
   const [form,setForm]=useState(blank);
   const f=k=>v=>setForm(p=>({...p,[k]:v}));
-  const withCalc=rows=>rows.map(r=>({...r,totalPaid:(r.principalPaid||0)+(r.interestPaid||0)+(r.lateFee||0),remaining:(r.loanAmount||0)-(r.principalPaid||0),memberName:getMemberDisplayName(getMember(r.memberId),lang),dateDisp:displayDate(r.date,lang,useBS)}));
+
+  const withCalc=rows=>rows.map(r=>{
+    const remaining=(r.loanAmount||0)-(r.principalPaid||0);
+    const isPaid=remaining<=0;
+    return{...r,
+      totalPaid:(r.principalPaid||0)+(r.interestPaid||0)+(r.lateFee||0),
+      remaining,
+      memberName:getMemberDisplayName(getMember(r.memberId),lang),
+      dateDisp:displayDate(r.date,lang,useBS),
+      statusDisp:isPaid?(lang==="np"?"✅ चुक्ता":"✅ Paid"):(lang==="np"?"🔴 सक्रिय":"🔴 Active"),
+    };
+  });
+
   const filtered=(filterMember?loans.filter(l=>l.memberId===filterMember):loans).sort((a,b)=>a.date.localeCompare(b.date));
   const rows=withCalc(filtered);
+
+  // Summary for selected member
+  const selMember=filterMember?members.find(m=>m.id===filterMember):null;
+  const selMemberName=selMember?getMemberDisplayName(selMember,lang):"";
+  const totalBorrowed=filtered.reduce((s,r)=>s+(r.loanAmount||0),0);
+  const totalPrincipal=filtered.reduce((s,r)=>s+(r.principalPaid||0),0);
+  const totalInterest=filtered.reduce((s,r)=>s+(r.interestPaid||0),0);
+  const totalLateFee=filtered.reduce((s,r)=>s+(r.lateFee||0),0);
+  const totalOutstanding=filtered.reduce((s,r)=>s+Math.max(0,(r.loanAmount||0)-(r.principalPaid||0)),0);
+
+  // Live search dropdown
+  const matchedMembers=searchText
+    ?members.filter(m=>(m.name||"").toLowerCase().includes(searchText.toLowerCase())||(m.nameEn||"").toLowerCase().includes(searchText.toLowerCase()))
+    :members;
+
   const save=()=>{
     if(!form.memberId){alert(t.selectMember);return;}
     const nums={loanAmount:+form.loanAmount,principalPaid:+form.principalPaid,interestPaid:+form.interestPaid,lateFee:+form.lateFee};
@@ -2289,8 +2377,10 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
     setModal(null);
   };
   const del=id=>{setLoans(loans.filter(l=>l.id!==id));};
-  const cols=[{key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars},{key:"loanAmount",label:t.loanAmount,fmt:true,num:true},{key:"principalPaid",label:t.principalPaid,fmt:true,num:true},{key:"interestPaid",label:t.interestPaid,fmt:true,num:true},{key:"lateFee",label:t.lateFee,fmt:true,num:true},{key:"totalPaid",label:t.totalPaid,fmt:true,num:true,green:true},{key:"remaining",label:t.remaining,fmt:true,num:true,red:true},{key:"signature",label:t.signature}];
+  const cols=[{key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars},{key:"loanAmount",label:t.loanAmount,fmt:true,num:true},{key:"principalPaid",label:t.principalPaid,fmt:true,num:true},{key:"interestPaid",label:t.interestPaid,fmt:true,num:true},{key:"lateFee",label:t.lateFee,fmt:true,num:true},{key:"totalPaid",label:t.totalPaid,fmt:true,num:true,green:true},{key:"remaining",label:t.remaining,fmt:true,num:true,red:true},{key:"statusDisp",label:lang==="np"?"स्थिति":"Status"},{key:"signature",label:t.signature}];
   const printHTML=`<table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
@@ -2301,10 +2391,55 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
       </div>
-      <select value={filterMember} onChange={e=>setFilterMember(e.target.value)} style={{padding:"0.5rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.85rem",width:"100%",maxWidth:260,marginBottom:"0.75rem"}}>
-        <option value="">{t.allMembers}</option>
-        {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-      </select>
+
+      {/* Member name search */}
+      <div style={{position:"relative",marginBottom:"0.75rem"}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowDrop(false);}}>
+        <input
+          value={filterMember?selMemberName:searchText}
+          onChange={e=>{setSearchText(e.target.value);setFilterMember("");setShowDrop(true);}}
+          onFocus={()=>setShowDrop(true)}
+          placeholder={lang==="np"?"सदस्यको नाम खोज्नुहोस्...":"Search member by name..."}
+          style={srchStyle}
+        />
+        {filterMember&&(
+          <button type="button" onClick={()=>{setFilterMember("");setSearchText("");}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:"1.1rem",color:"#6b7280",lineHeight:1}}>×</button>
+        )}
+        {showDrop&&!filterMember&&(
+          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #d1d5db",borderRadius:"0.5rem",zIndex:50,maxHeight:180,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.12)"}}>
+            <div onMouseDown={()=>{setFilterMember("");setSearchText("");setShowDrop(false);}} style={{padding:"0.45rem 0.75rem",cursor:"pointer",fontSize:"0.82rem",color:"#6b7280",borderBottom:"1px solid #f3f4f6",background:"#f9fafb",fontWeight:600}}>{t.allMembers}</div>
+            {matchedMembers.map(m=>(
+              <div key={m.id} onMouseDown={()=>{setFilterMember(m.id);setSearchText("");setShowDrop(false);}}
+                onMouseEnter={e=>e.currentTarget.style.background="#fff7ed"} onMouseLeave={e=>e.currentTarget.style.background="#fff"}
+                style={{padding:"0.45rem 0.75rem",cursor:"pointer",fontSize:"0.83rem",color:"#111827"}}>
+                {getMemberDisplayName(m,lang)}
+              </div>
+            ))}
+            {matchedMembers.length===0&&<div style={{padding:"0.75rem",color:"#9ca3af",fontSize:"0.82rem",textAlign:"center"}}>{lang==="np"?"सदस्य भेटिएन":"No member found"}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Loan summary card */}
+      {filterMember&&(
+        <div style={{background:"linear-gradient(135deg,#fff7ed,#fed7aa)",borderRadius:"0.75rem",padding:"0.75rem 1rem",marginBottom:"0.75rem",border:"1px solid #fdba74"}}>
+          <div style={{fontWeight:700,color:"#9a3412",fontSize:"0.83rem",marginBottom:"0.5rem"}}>🏦 {selMemberName} — {lang==="np"?"ऋण सारांश":"Loan Summary"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:"0.4rem"}}>
+            {[
+              {label:t.loanAmount,    value:fmtFn(totalBorrowed),    color:"#dc2626"},
+              {label:t.principalPaid, value:fmtFn(totalPrincipal),   color:"#16a34a"},
+              {label:t.interestPaid,  value:fmtFn(totalInterest),    color:"#7c3aed"},
+              ...(totalLateFee>0?[{label:t.lateFee, value:fmtFn(totalLateFee), color:"#d97706"}]:[]),
+              {label:t.remaining,     value:fmtFn(totalOutstanding), color:totalOutstanding>0?"#dc2626":"#16a34a"},
+            ].map((item,i)=>(
+              <div key={i} style={{background:"#fff",borderRadius:"0.5rem",padding:"0.4rem 0.6rem",borderLeft:`3px solid ${item.color}`}}>
+                <div style={{fontSize:"0.65rem",color:"#6b7280",fontWeight:600}}>{item.label}</div>
+                <div style={{fontSize:"0.85rem",fontWeight:700,color:item.color}}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
         <Table t={t} cols={cols} rows={rows} onEdit={r=>{setForm(r);setModal("edit");}} onDelete={del} isAdmin={isAdmin}/>
       </div>
@@ -2330,7 +2465,6 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 14: CASH BOOK (auto-sync) — with dynamic category filtering by txType
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2768,17 +2902,47 @@ function BankBook({bank,addBank,updBank,delBank,lang,t,useBS,fmtFn,isAdmin,categ
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 16: INCOME/EXPENSE
+// SECTION 16: INCOME/EXPENSE — with category + month filters and totals bar
 // ═══════════════════════════════════════════════════════════════════════════════
 function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [modal,setModal]=useState(null);
   const blank={date:today(),particulars:"",income:0,expense:0,category:"meetingExpense",source:"manual",txId:null};
   const [form,setForm]=useState(blank);
   const f=k=>v=>setForm(p=>({...p,[k]:v}));
+
+  // Filters — default to current BS year, all months
+  const currentBs=adToBS(today());
+  const [filterCat,setFilterCat]=useState("");
+  const [filterYear,setFilterYear]=useState(currentBs.y||2081);
+  const [filterMonth,setFilterMonth]=useState(0);
+
   const withBal=rows=>{let b=0;return[...rows].sort((a,bb)=>a.date.localeCompare(bb.date)).map(r=>{b+=(r.income||0)-(r.expense||0);return{...r,balance:b};});};
-  const rows=withBal(ie).map(r=>({...r,dateDisp:displayDate(r.date,lang,useBS)}));
+
+  // Apply category + month/year filters
+  const filteredIE=(()=>{
+    let res=ie;
+    if(filterCat) res=res.filter(r=>r.category===filterCat);
+    if(filterYear) res=res.filter(r=>{
+      const bs=adToBS(r.date);
+      return filterMonth?bs.y===filterYear&&bs.m===filterMonth:bs.y===filterYear;
+    });
+    return res;
+  })();
+
+  const rows=withBal(filteredIE).map(r=>({...r,dateDisp:displayDate(r.date,lang,useBS)}));
+
+  // Totals for current filter
+  const totalIncome=filteredIE.reduce((s,r)=>s+(r.income||0),0);
+  const totalExpense=filteredIE.reduce((s,r)=>s+(r.expense||0),0);
+  const netBalance=totalIncome-totalExpense;
+
   const getLabel=k=>getCatLabel(k)||catLabel(k,t);
   const catOpts=[...(categories.income||[]),...(categories.expense||[])].map(k=>({value:k,label:getLabel(k)}));
+
+  // BS year range + month labels
+  const bsYears=Array.from({length:8},(_,i)=>(currentBs.y||2081)-2+i);
+  const bsMonthLabels=lang==="en"?BS_MONTHS_EN:BS_MONTHS_NP;
+
   const save=()=>{
     const en={...form,income:+form.income,expense:+form.expense,modifiedAt:new Date().toISOString()};
     if(modal==="add")setIE([...ie,{...en,id:uid()}]);
@@ -2796,6 +2960,8 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   };
   const cols=[{key:"dateDisp",label:t.date},{key:"particulars",label:t.particulars,wrap:true},{key:"income",label:t.incomeLabel,fmt:true,num:true,green:true},{key:"expense",label:t.expenseLabel,fmt:true,num:true,red:true},{key:"balance",label:t.balance,fmt:true,num:true}];
   const printHTML=`<table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const selStyle={padding:"0.45rem 0.6rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.82rem",background:"#fff",flex:1,minWidth:0,outline:"none"};
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
@@ -2806,6 +2972,43 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>
       </div>
+
+      {/* Filter bar: category + year + month */}
+      <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"0.6rem",alignItems:"center"}}>
+        <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={selStyle}>
+          <option value="">{lang==="np"?"सबै श्रेणी":"All Categories"}</option>
+          {catOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <select value={filterYear} onChange={e=>setFilterYear(Number(e.target.value))} style={selStyle}>
+          {bsYears.map(y=><option key={y} value={y}>{y} {lang==="np"?"वि.सं.":"BS"}</option>)}
+        </select>
+        <select value={filterMonth} onChange={e=>setFilterMonth(Number(e.target.value))} style={selStyle}>
+          <option value={0}>{lang==="np"?"सबै महिना":"All Months"}</option>
+          {bsMonthLabels.map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        {(filterCat||filterMonth!==0)&&(
+          <button type="button" onClick={()=>{setFilterCat("");setFilterMonth(0);}} style={{padding:"0.4rem 0.7rem",border:"1px solid #fecaca",borderRadius:"0.5rem",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontSize:"0.78rem",fontFamily:"inherit",fontWeight:600,flexShrink:0}}>
+            {lang==="np"?"रिसेट":"Reset"}
+          </button>
+        )}
+      </div>
+
+      {/* Totals bar */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.4rem",marginBottom:"0.75rem"}}>
+        <div style={{background:"#f0fdf4",borderRadius:"0.5rem",padding:"0.5rem 0.6rem",borderLeft:"3px solid #16a34a",textAlign:"center"}}>
+          <div style={{fontSize:"0.62rem",color:"#6b7280",fontWeight:600}}>{t.incomeLabel}</div>
+          <div style={{fontSize:"0.88rem",fontWeight:700,color:"#16a34a"}}>{fmtFn(totalIncome)}</div>
+        </div>
+        <div style={{background:"#fff7ed",borderRadius:"0.5rem",padding:"0.5rem 0.6rem",borderLeft:"3px solid #dc2626",textAlign:"center"}}>
+          <div style={{fontSize:"0.62rem",color:"#6b7280",fontWeight:600}}>{t.expenseLabel}</div>
+          <div style={{fontSize:"0.88rem",fontWeight:700,color:"#dc2626"}}>{fmtFn(totalExpense)}</div>
+        </div>
+        <div style={{background:netBalance>=0?"#eff6ff":"#fef2f2",borderRadius:"0.5rem",padding:"0.5rem 0.6rem",borderLeft:`3px solid ${netBalance>=0?"#2563eb":"#dc2626"}`,textAlign:"center"}}>
+          <div style={{fontSize:"0.62rem",color:"#6b7280",fontWeight:600}}>{t.netBalance||"Net"}</div>
+          <div style={{fontSize:"0.88rem",fontWeight:700,color:netBalance>=0?"#2563eb":"#dc2626"}}>{fmtFn(netBalance)}</div>
+        </div>
+      </div>
+
       <div style={{background:"#fefce8",borderRadius:"0.5rem",padding:"0.5rem 0.75rem",fontSize:"0.78rem",color:"#854d0e",marginBottom:"0.75rem"}}>💡 {t.syncHint}</div>
       <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
         <Table t={t} cols={cols} rows={rows} onEdit={editEntry} onDelete={del} isAdmin={isAdmin}/>

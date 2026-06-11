@@ -166,6 +166,7 @@ const STORAGE_KEYS = {
   members:    "fys_members",
   savings:    "fys_savings",
   loans:      "fys_loans",
+  loanPayments:"fys_loan_payments",
   cash:       "fys_cash",
   bank:       "fys_bank",
   ie:         "fys_ie",
@@ -399,6 +400,7 @@ const BACKUP_KEYS = [
   STORAGE_KEYS.members,
   STORAGE_KEYS.savings,
   STORAGE_KEYS.loans,
+  STORAGE_KEYS.loanPayments,
   STORAGE_KEYS.cash,
   STORAGE_KEYS.bank,
   STORAGE_KEYS.ie,
@@ -571,8 +573,12 @@ const SEED_SAVINGS = [
   { id:"fys_sv_004", memberId:M1, date:"2025-02-10", particulars:"मासिक बचत", deposit:500, withdraw:0, signature:"", modifiedAt:"2025-02-10" },
 ];
 const SEED_LOANS = [
-  { id:"fys_ln_001", memberId:M1, date:"2025-01-20", particulars:"व्यापार ऋण", loanAmount:5000, principalPaid:500, interestPaid:100, lateFee:0, signature:"", modifiedAt:"2025-01-20" },
-  { id:"fys_ln_002", memberId:M3, date:"2025-02-05", particulars:"कृषि ऋण",   loanAmount:3000, principalPaid:300, interestPaid:60,  lateFee:0, signature:"", modifiedAt:"2025-02-05" },
+  { id:"fys_ln_001", memberId:M1, startDate:"2025-01-20", particulars:"व्यापार ऋण", principal:5000, interestRate:12, duration:12, modifiedAt:"2025-01-20" },
+  { id:"fys_ln_002", memberId:M3, startDate:"2025-02-05", particulars:"कृषि ऋण",   principal:3000, interestRate:12, duration:6,  modifiedAt:"2025-02-05" },
+];
+const SEED_LOAN_PAYMENTS = [
+  { id:"fys_lp_001", loanId:"fys_ln_001", date:"2025-01-20", principalPaid:500, interestPaid:100, lateFee:0, signature:"", modifiedAt:"2025-01-20" },
+  { id:"fys_lp_002", loanId:"fys_ln_002", date:"2025-02-05", principalPaid:300, interestPaid:60,  lateFee:0, signature:"", modifiedAt:"2025-02-05" },
 ];
 const SEED_CASH = [
   { id:TX1, date:"2025-01-10", particulars:"बचत संकलन", cashIn:1500, cashOut:0,    category:"savingsContribution", txId:TX1, txType:"income",  modifiedAt:"2025-01-10" },
@@ -1350,7 +1356,7 @@ function CategoryManager({categories,setCategories,onClose,t,cash,bank,ie,saving
 // ═══════════════════════════════════════════════════════════════════════════════
 function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
   totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,
-  members,savings,loans,getMember}){
+  members,savings,loans,loanPayments,getMember}){
   const [tab,setTab]=useState("summary");
 
   // Find this member's linked member record by matching displayName or just show all (member sees all group data read-only)
@@ -1527,14 +1533,15 @@ function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
                     {loans.length===0&&(
                       <tr><td colSpan={5} style={{textAlign:"center",padding:"2rem",color:"#9ca3af",fontStyle:"italic"}}>{t.noData}</td></tr>
                     )}
-                    {[...loans].sort((a,b)=>b.date.localeCompare(a.date)).map((l,i)=>{
-                      const remaining=(l.loanAmount||0)-(l.principalPaid||0);
+                    {[...loans].sort((a,b)=>(b.startDate||b.date||"").localeCompare(a.startDate||a.date||"")).map((l,i)=>{
+                      const paid=(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((s,p)=>s+(p.principalPaid||0),0);
+                      const remaining=Math.max(0,(l.principal||0)-paid);
                       return(
                         <tr key={l.id||i} style={{background:i%2===0?"#fff":"#f0f9ff",borderBottom:"1px solid #f3f4f6"}}>
-                          <td style={{padding:"0.5rem 0.75rem",whiteSpace:"nowrap"}}>{displayDate(l.date,lang,useBS)}</td>
+                          <td style={{padding:"0.5rem 0.75rem",whiteSpace:"nowrap"}}>{displayDate(l.startDate||l.date,lang,useBS)}</td>
                           <td style={{padding:"0.5rem 0.75rem"}}>{getMemberDisplayName(getMember(l.memberId),lang)}</td>
                           <td style={{padding:"0.5rem 0.75rem"}}>{l.particulars}</td>
-                          <td style={{padding:"0.5rem 0.75rem",color:"#1565c0",fontWeight:600}}>{fmtFn(l.loanAmount||0)}</td>
+                          <td style={{padding:"0.5rem 0.75rem",color:"#1565c0",fontWeight:600}}>{fmtFn(l.principal||0)}</td>
                           <td style={{padding:"0.5rem 0.75rem",color:remaining>0?"#dc2626":"#16a34a",fontWeight:600}}>{fmtFn(remaining)}</td>
                         </tr>
                       );
@@ -1571,6 +1578,7 @@ export default function App(){
   const [members,setMembers]=useFirebaseStore("fys_data/members",STORAGE_KEYS.members,SEED_MEMBERS);
   const [savings,setSavings]=useFirebaseStore("fys_data/savings",STORAGE_KEYS.savings,SEED_SAVINGS);
   const [loans,setLoans]=useFirebaseStore("fys_data/loans",STORAGE_KEYS.loans,SEED_LOANS);
+  const [loanPayments,setLoanPayments]=useFirebaseStore("fys_data/loanPayments",STORAGE_KEYS.loanPayments,SEED_LOAN_PAYMENTS);
   const [cash,setCash]=useFirebaseStore("fys_data/cash",STORAGE_KEYS.cash,SEED_CASH);
   const [bank,setBank]=useFirebaseStore("fys_data/bank",STORAGE_KEYS.bank,SEED_BANK);
   const [ie,setIE]=useFirebaseStore("fys_data/ie",STORAGE_KEYS.ie,SEED_IE);
@@ -1636,7 +1644,7 @@ export default function App(){
 
   // ── Computed totals ────────────────────────────────────────────────────────
   const totalSaving=savings.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
-  const totalLoanOut=loans.reduce((a,l)=>a+(l.loanAmount||0)-(l.principalPaid||0),0);
+  const totalLoanOut=loans.reduce((a,l)=>{const paid=(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((s,p)=>s+(p.principalPaid||0),0);return a+Math.max(0,(l.principal||0)-paid);},0);
   const cashBal=cash.reduce((a,c)=>a+(c.cashIn||0)-(c.cashOut||0),0);
   const bankBal=bank.reduce((a,b)=>a+(b.deposit||0)-(b.withdrawal||0),0);
   const nowM=new Date().getMonth(),nowY=new Date().getFullYear();
@@ -1662,7 +1670,7 @@ export default function App(){
         cashBal={cashBal} bankBal={bankBal}
         monthlyIncome={monthlyIncome} monthlyExpense={monthlyExpense}
         totalFund={totalFund} members={members}
-        savings={savings} loans={loans}
+        savings={savings} loans={loans} loanPayments={loanPayments}
         getMember={getMember}
       />
     );
@@ -1840,7 +1848,7 @@ export default function App(){
 
         {/* ── FINANCE (Saving + Loan + Income/Expense combined) ── */}
         {tab==="finance"&&(
-          <FinancePage {...{savings,setSavings,loans,setLoans,ie,setIE,members,memberOptions,getMember,...sp}}/>
+          <FinancePage {...{savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,...sp}}/>
         )}
 
         {/* ── BOOKS (Cash Book + Bank Book combined) ── */}
@@ -1850,7 +1858,7 @@ export default function App(){
 
         {/* ── REPORT ── */}
         {tab==="report"&&(
-          <Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,...sp}}/>
+          <Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,...sp}}/>
         )}
 
       </main>
@@ -1915,7 +1923,7 @@ export default function App(){
 // ═══════════════════════════════════════════════════════════════════════════════
 // FINANCE PAGE — Saving + Loan + Income/Expense with sub-tabs
 // ═══════════════════════════════════════════════════════════════════════════════
-function FinancePage({savings,setSavings,loans,setLoans,ie,setIE,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin,categories}){
+function FinancePage({savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [sub,setSub]=useState("saving");
   const subTabs=[
     {id:"saving", label:lang==="np"?"बचत":"Saving",  icon:"saving",  color:"#16a34a"},
@@ -1943,7 +1951,7 @@ function FinancePage({savings,setSavings,loans,setLoans,ie,setIE,members,memberO
         ))}
       </div>
       {sub==="saving"&&<SavingLedger {...{savings,setSavings,loans,members,memberOptions,getMember,...sp}}/>}
-      {sub==="loan"&&<LoanLedger {...{loans,setLoans,members,memberOptions,getMember,...sp}}/>}
+      {sub==="loan"&&<LoanLedger {...{loans,setLoans,loanPayments,setLoanPayments,members,memberOptions,getMember,...sp}}/>}
       {sub==="ie"&&<IncomeExpense {...{ie,setIE,...sp}}/>}
     </div>
   );
@@ -2330,79 +2338,121 @@ function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,
 }
 
 
-function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin}){
+function LoanLedger({loans,setLoans,loanPayments,setLoanPayments,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin}){
   const [modal,setModal]=useState(null);
+  const [expandedLoan,setExpandedLoan]=useState(null);
   const [filterMember,setFilterMember]=useState("");
   const [searchText,setSearchText]=useState("");
   const [showDrop,setShowDrop]=useState(false);
-  const blank={memberId:"",date:today(),particulars:"व्यापार ऋण",loanAmount:0,principalPaid:0,interestPaid:0,lateFee:0,signature:""};
-  const [form,setForm]=useState(blank);
-  const f=k=>v=>setForm(p=>({...p,[k]:v}));
+  const blankLoan={memberId:"",startDate:today(),particulars:"\u0935\u094d\u092f\u093e\u092a\u093e\u0930 \u090b\u0923",principal:0,interestRate:12,duration:12};
+  const blankPayment={loanId:"",date:today(),principalPaid:0,interestPaid:0,lateFee:0,signature:""};
+  const [loanForm,setLoanForm]=useState(blankLoan);
+  const [payForm,setPayForm]=useState(blankPayment);
+  const lf=k=>v=>setLoanForm(p=>({...p,[k]:v}));
+  const pf=k=>v=>setPayForm(p=>({...p,[k]:v}));
+  const isEn=lang==="en";
 
-  const withCalc=rows=>rows.map(r=>{
-    const remaining=(r.loanAmount||0)-(r.principalPaid||0);
-    const isPaid=remaining<=0;
-    return{...r,
-      totalPaid:(r.principalPaid||0)+(r.interestPaid||0)+(r.lateFee||0),
-      remaining,
-      memberName:getMemberDisplayName(getMember(r.memberId),lang),
-      dateDisp:displayDate(r.date,lang,useBS),
-      statusDisp:isPaid?(lang==="np"?"✅ चुक्ता":"✅ Paid"):(lang==="np"?"🔴 सक्रिय":"🔴 Active"),
-    };
-  });
+  const getRemaining=loan=>{
+    const paid=(loanPayments||[]).filter(p=>p.loanId===loan.id).reduce((s,p)=>s+(p.principalPaid||0),0);
+    return Math.max(0,(loan.principal||0)-paid);
+  };
 
-  const filtered=(filterMember?loans.filter(l=>l.memberId===filterMember):loans).sort((a,b)=>a.date.localeCompare(b.date));
-  const rows=withCalc(filtered);
-
-  // Summary for selected member
   const selMember=filterMember?members.find(m=>m.id===filterMember):null;
   const selMemberName=selMember?getMemberDisplayName(selMember,lang):"";
-  const totalBorrowed=filtered.reduce((s,r)=>s+(r.loanAmount||0),0);
-  const totalPrincipal=filtered.reduce((s,r)=>s+(r.principalPaid||0),0);
-  const totalInterest=filtered.reduce((s,r)=>s+(r.interestPaid||0),0);
-  const totalLateFee=filtered.reduce((s,r)=>s+(r.lateFee||0),0);
-  const totalOutstanding=filtered.reduce((s,r)=>s+Math.max(0,(r.loanAmount||0)-(r.principalPaid||0)),0);
+  const filteredLoans=(filterMember?loans.filter(l=>l.memberId===filterMember):loans)
+    .sort((a,b)=>(a.startDate||"").localeCompare(b.startDate||""));
 
-  // Live search dropdown
+  const totalBorrowed=filteredLoans.reduce((s,l)=>s+(l.principal||0),0);
+  const totalOutstanding=filteredLoans.reduce((s,l)=>s+getRemaining(l),0);
+  const totalPrincipalPaid=filteredLoans.reduce((s,l)=>(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((a,p)=>a+(p.principalPaid||0),s),0);
+  const totalInterestPaid=filteredLoans.reduce((s,l)=>(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((a,p)=>a+(p.interestPaid||0),s),0);
+
   const matchedMembers=searchText
     ?members.filter(m=>(m.name||"").toLowerCase().includes(searchText.toLowerCase())||(m.nameEn||"").toLowerCase().includes(searchText.toLowerCase()))
     :members;
 
-  const save=()=>{
-    if(!form.memberId){alert(t.selectMember);return;}
-    const nums={loanAmount:+form.loanAmount,principalPaid:+form.principalPaid,interestPaid:+form.interestPaid,lateFee:+form.lateFee};
-    const en={...form,...nums,modifiedAt:new Date().toISOString()};
-    if(modal==="add")setLoans([...loans,{...en,id:uid()}]);
-    else setLoans(loans.map(l=>l.id===form.id?en:l));
+  const saveLoan=()=>{
+    if(!loanForm.memberId){alert(t.selectMember);return;}
+    if(!(+loanForm.principal>0)){alert(isEn?"Loan amount is required.":"\u090b\u0923 \u0930\u0915\u092e \u0906\u0935\u0936\u094d\u092f\u0915 \u091b\u0964");return;}
+    const en={...loanForm,principal:+loanForm.principal,interestRate:+loanForm.interestRate,duration:+loanForm.duration,modifiedAt:new Date().toISOString()};
+    if(modal==="addLoan")setLoans(prev=>[...prev,{...en,id:uid()}]);
+    else setLoans(prev=>prev.map(l=>l.id===loanForm.id?en:l));
     setModal(null);
   };
-  const del=id=>{setLoans(loans.filter(l=>l.id!==id));};
-  const cols=[{key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars},{key:"loanAmount",label:t.loanAmount,fmt:true,num:true},{key:"principalPaid",label:t.principalPaid,fmt:true,num:true},{key:"interestPaid",label:t.interestPaid,fmt:true,num:true},{key:"lateFee",label:t.lateFee,fmt:true,num:true},{key:"totalPaid",label:t.totalPaid,fmt:true,num:true,green:true},{key:"remaining",label:t.remaining,fmt:true,num:true,red:true},{key:"statusDisp",label:lang==="np"?"स्थिति":"Status"},{key:"signature",label:t.signature}];
-  const printHTML=`<table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+
+  const deleteLoan=id=>{
+    if(!window.confirm(isEn?"Delete this loan and all its payments?":"\u092f\u094b \u090b\u0923 \u0930 \u092f\u0938\u0915\u093e \u0938\u092c\u0948 \u0915\u093f\u0938\u094d\u0924\u0939\u0930\u0942 \u0939\u091f\u093e\u0909\u0928\u0947?"))return;
+    setLoans(prev=>prev.filter(l=>l.id!==id));
+    setLoanPayments(prev=>(prev||[]).filter(p=>p.loanId!==id));
+    if(expandedLoan===id)setExpandedLoan(null);
+  };
+
+  const savePayment=()=>{
+    const pp=+payForm.principalPaid||0;
+    const ip=+payForm.interestPaid||0;
+    const lf2=+payForm.lateFee||0;
+    if(pp===0&&ip===0&&lf2===0){alert(isEn?"At least one amount required.":"\u0915\u092e\u094d\u0924\u093f\u092e\u093e \u090f\u0915 \u0930\u0915\u092e \u0906\u0935\u0936\u094d\u092f\u0915 \u091b\u0964");return;}
+    const en={...payForm,principalPaid:pp,interestPaid:ip,lateFee:lf2,modifiedAt:new Date().toISOString()};
+    if(modal==="addPayment")setLoanPayments(prev=>[...(prev||[]),{...en,id:uid()}]);
+    else setLoanPayments(prev=>(prev||[]).map(p=>p.id===payForm.id?en:p));
+    setModal(null);
+  };
+
+  const deletePayment=id=>{setLoanPayments(prev=>(prev||[]).filter(p=>p.id!==id));};
+
+  const flatRows=filteredLoans.map(l=>{
+    const pmts=(loanPayments||[]).filter(p=>p.loanId===l.id);
+    const principalPaid=pmts.reduce((s,p)=>s+(p.principalPaid||0),0);
+    const interestPaidTot=pmts.reduce((s,p)=>s+(p.interestPaid||0),0);
+    const lateFeeTot=pmts.reduce((s,p)=>s+(p.lateFee||0),0);
+    const remaining=Math.max(0,(l.principal||0)-principalPaid);
+    return{
+      dateDisp:displayDate(l.startDate,lang,useBS),
+      memberName:getMemberDisplayName(getMember(l.memberId),lang),
+      particulars:l.particulars,
+      principal:fmtFn(l.principal||0),
+      duration:`${l.duration||"\u2014"} ${isEn?"mo":"\u092e\u0939\u093f\u0928\u093e"}`,
+      interestRate:`${l.interestRate||0}%`,
+      principalPaid:fmtFn(principalPaid),
+      interestPaid:fmtFn(interestPaidTot),
+      lateFee:fmtFn(lateFeeTot),
+      remaining:fmtFn(remaining),
+      status:remaining<=0
+        ?(isEn?"\u2705 Paid":"\u2705 \u091a\u0941\u0915\u094d\u0924\u093e")
+        :(isEn?"\ud83d\udd34 Active":"\ud83d\udd34 \u0938\u0915\u094d\u0930\u093f\u092f"),
+    };
+  });
+  const printCols=[
+    {key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars},
+    {key:"principal",label:t.loanAmount},{key:"duration",label:isEn?"Duration":"\u0905\u0935\u0927\u093f"},{key:"interestRate",label:isEn?"Rate":"\u0926\u0930"},
+    {key:"principalPaid",label:t.principalPaid},{key:"interestPaid",label:t.interestPaid},{key:"lateFee",label:t.lateFee},
+    {key:"remaining",label:t.remaining},{key:"status",label:isEn?"Status":"\u0938\u094d\u0925\u093f\u0924\u093f"},
+  ];
+  const printHTML=`<table><thead><tr>${printCols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${flatRows.map(r=>`<tr>${printCols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
 
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
-        <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>🏦 {t.loan}</h2>
+        <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>\ud83c\udfe6 {t.loan}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
           <Btn onClick={()=>exportPrint(t.loan,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
-          <Btn onClick={()=>exportCSV(t.loan,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
-          {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
+          <Btn onClick={()=>exportCSV(t.loan,printCols,flatRows)} color="#16a34a" icon="excel">{t.csv}</Btn>
+          {isAdmin&&<Btn onClick={()=>{setLoanForm(blankLoan);setModal("addLoan");}} icon="plus">{isEn?"New Loan":"\u0928\u092f\u093e\u0901 \u090b\u0923"}</Btn>}
         </div>
       </div>
 
-      {/* Member name search */}
+      {/* Member search */}
       <div style={{position:"relative",marginBottom:"0.75rem"}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setShowDrop(false);}}>
         <input
           value={filterMember?selMemberName:searchText}
           onChange={e=>{setSearchText(e.target.value);setFilterMember("");setShowDrop(true);}}
           onFocus={()=>setShowDrop(true)}
-          placeholder={lang==="np"?"सदस्यको नाम खोज्नुहोस्...":"Search member by name..."}
+          placeholder={isEn?"Search member by name...":"\u0938\u0926\u0938\u094d\u092f\u0915\u094b \u0928\u093e\u092e \u062e\u094b\u091c\u094d\u0928\u0941\u0939\u094b\u0938\u094d..."}
           style={srchStyle}
         />
         {filterMember&&(
-          <button type="button" onClick={()=>{setFilterMember("");setSearchText("");}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:"1.1rem",color:"#6b7280",lineHeight:1}}>×</button>
+          <button type="button" onClick={()=>{setFilterMember("");setSearchText("");}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:"1.1rem",color:"#6b7280",lineHeight:1}}>\u00d7</button>
         )}
         {showDrop&&!filterMember&&(
           <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #d1d5db",borderRadius:"0.5rem",zIndex:50,maxHeight:180,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.12)"}}>
@@ -2414,22 +2464,21 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
                 {getMemberDisplayName(m,lang)}
               </div>
             ))}
-            {matchedMembers.length===0&&<div style={{padding:"0.75rem",color:"#9ca3af",fontSize:"0.82rem",textAlign:"center"}}>{lang==="np"?"सदस्य भेटिएन":"No member found"}</div>}
+            {matchedMembers.length===0&&<div style={{padding:"0.75rem",color:"#9ca3af",fontSize:"0.82rem",textAlign:"center"}}>{isEn?"No member found":"\u0938\u0926\u0938\u094d\u092f \u092d\u0947\u091f\u093f\u090f\u0928"}</div>}
           </div>
         )}
       </div>
 
-      {/* Loan summary card */}
+      {/* Summary card */}
       {filterMember&&(
         <div style={{background:"linear-gradient(135deg,#fff7ed,#fed7aa)",borderRadius:"0.75rem",padding:"0.75rem 1rem",marginBottom:"0.75rem",border:"1px solid #fdba74"}}>
-          <div style={{fontWeight:700,color:"#9a3412",fontSize:"0.83rem",marginBottom:"0.5rem"}}>🏦 {selMemberName} — {lang==="np"?"ऋण सारांश":"Loan Summary"}</div>
+          <div style={{fontWeight:700,color:"#9a3412",fontSize:"0.83rem",marginBottom:"0.5rem"}}>\ud83c\udfe6 {selMemberName} \u2014 {isEn?"Loan Summary":"\u090b\u0923 \u0938\u093e\u0930\u093e\u0902\u0936"}</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:"0.4rem"}}>
             {[
-              {label:t.loanAmount,    value:fmtFn(totalBorrowed),    color:"#dc2626"},
-              {label:t.principalPaid, value:fmtFn(totalPrincipal),   color:"#16a34a"},
-              {label:t.interestPaid,  value:fmtFn(totalInterest),    color:"#7c3aed"},
-              ...(totalLateFee>0?[{label:t.lateFee, value:fmtFn(totalLateFee), color:"#d97706"}]:[]),
-              {label:t.remaining,     value:fmtFn(totalOutstanding), color:totalOutstanding>0?"#dc2626":"#16a34a"},
+              {label:t.loanAmount,    value:fmtFn(totalBorrowed),      color:"#dc2626"},
+              {label:t.principalPaid, value:fmtFn(totalPrincipalPaid), color:"#16a34a"},
+              {label:t.interestPaid,  value:fmtFn(totalInterestPaid),  color:"#7c3aed"},
+              {label:t.remaining,     value:fmtFn(totalOutstanding),   color:totalOutstanding>0?"#dc2626":"#16a34a"},
             ].map((item,i)=>(
               <div key={i} style={{background:"#fff",borderRadius:"0.5rem",padding:"0.4rem 0.6rem",borderLeft:`3px solid ${item.color}`}}>
                 <div style={{fontSize:"0.65rem",color:"#6b7280",fontWeight:600}}>{item.label}</div>
@@ -2440,30 +2489,164 @@ function LoanLedger({loans,setLoans,members,memberOptions,getMember,lang,t,useBS
         </div>
       )}
 
-      <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
-        <Table t={t} cols={cols} rows={rows} onEdit={r=>{setForm(r);setModal("edit");}} onDelete={del} isAdmin={isAdmin}/>
-      </div>
-      {modal&&(
-        <Modal title={modal==="add"?`${t.add} — ${t.loan}`:`${t.edit} — ${t.loan}`} onClose={()=>setModal(null)}>
-          <Field label={t.member} type="select" value={form.memberId} onChange={f("memberId")} options={memberOptions} required/>
-          <Field label={t.date} type="date" value={form.date} onChange={f("date")} required/>
-          <Field label={t.particulars} value={form.particulars} onChange={f("particulars")}/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem"}}>
-            <Field label={`${t.loanAmount} (रू)`} type="number" value={form.loanAmount} onChange={f("loanAmount")}/>
-            <Field label={`${t.principalPaid} (रू)`} type="number" value={form.principalPaid} onChange={f("principalPaid")}/>
-            <Field label={`${t.interestPaid} (रू)`} type="number" value={form.interestPaid} onChange={f("interestPaid")}/>
-            <Field label={`${t.lateFee} (रू)`} type="number" value={form.lateFee} onChange={f("lateFee")}/>
+      {/* Loan cards */}
+      {filteredLoans.length===0&&(
+        <div style={{background:"#fff",borderRadius:"0.875rem",padding:"2rem",textAlign:"center",color:"#9ca3af",fontStyle:"italic",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>{t.noData}</div>
+      )}
+      {filteredLoans.map(loan=>{
+        const pmts=(loanPayments||[]).filter(p=>p.loanId===loan.id).sort((a,b)=>a.date.localeCompare(b.date));
+        const principalPaid=pmts.reduce((s,p)=>s+(p.principalPaid||0),0);
+        const interestPaid=pmts.reduce((s,p)=>s+(p.interestPaid||0),0);
+        const lateFee=pmts.reduce((s,p)=>s+(p.lateFee||0),0);
+        const remaining=Math.max(0,(loan.principal||0)-principalPaid);
+        const isPaid=remaining<=0;
+        const isExpanded=expandedLoan===loan.id;
+        const memberName=getMemberDisplayName(getMember(loan.memberId),lang);
+
+        return(
+          <div key={loan.id} style={{background:"#fff",borderRadius:"0.875rem",marginBottom:"0.75rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",border:`1px solid ${isPaid?"#bbf7d0":"#fed7aa"}`}}>
+            {/* Loan header row */}
+            <div style={{display:"flex",alignItems:"center",gap:"0.5rem",padding:"0.75rem 1rem",background:isPaid?"#f0fdf4":"#fff7ed",cursor:"pointer",flexWrap:"wrap"}} onClick={()=>setExpandedLoan(isExpanded?null:loan.id)}>
+              <span style={{fontSize:"0.85rem",flexShrink:0,color:"#6b7280"}}>{isExpanded?"\u25bc":"\u25b6"}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700,fontSize:"0.9rem",color:"#1b5e20",fontFamily:"inherit"}}>{memberName}</span>
+                  <span style={{background:isPaid?"#dcfce7":"#fee2e2",color:isPaid?"#166534":"#dc2626",fontSize:"0.68rem",fontWeight:700,padding:"2px 8px",borderRadius:"1rem",flexShrink:0}}>
+                    {isPaid?(isEn?"\u2705 Paid":"\u2705 \u091a\u0941\u0915\u094d\u0924\u093e"):(isEn?"\ud83d\udd34 Active":"\ud83d\udd34 \u0938\u0915\u094d\u0930\u093f\u092f")}
+                  </span>
+                </div>
+                <div style={{fontSize:"0.75rem",color:"#6b7280",marginTop:2}}>
+                  {loan.particulars}&nbsp;|&nbsp;{displayDate(loan.startDate,lang,useBS)}&nbsp;|&nbsp;{loan.duration}{isEn?" mo":"\u092e."}&nbsp;|&nbsp;{loan.interestRate}%&nbsp;|&nbsp;{pmts.length}{isEn?" payment(s)":" \u0915\u093f\u0938\u094d\u0924"}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:"0.75rem",flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:"0.62rem",color:"#6b7280"}}>{t.loanAmount}</div>
+                  <div style={{fontWeight:700,fontSize:"0.85rem",color:"#1565c0"}}>{fmtFn(loan.principal||0)}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:"0.62rem",color:"#6b7280"}}>{t.remaining}</div>
+                  <div style={{fontWeight:700,fontSize:"0.85rem",color:isPaid?"#16a34a":"#dc2626"}}>{fmtFn(remaining)}</div>
+                </div>
+                {isAdmin&&(
+                  <div style={{display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
+                    <button type="button" onClick={()=>{setLoanForm({...loan});setModal("editLoan");}} style={{background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:"0.4rem",padding:"4px 8px",cursor:"pointer",fontSize:"0.72rem",color:"#0369a1",fontWeight:600,fontFamily:"inherit"}}>{t.edit}</button>
+                    <button type="button" onClick={()=>{setPayForm({...blankPayment,loanId:loan.id});setModal("addPayment");}} style={{background:"#dcfce7",border:"1px solid #bbf7d0",borderRadius:"0.4rem",padding:"4px 8px",cursor:"pointer",fontSize:"0.72rem",color:"#166534",fontWeight:600,fontFamily:"inherit"}}>{isEn?"+ Pay":"+ \u0915\u093f\u0938\u094d\u0924"}</button>
+                    <button type="button" onClick={()=>deleteLoan(loan.id)} style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:"0.4rem",padding:"4px 8px",cursor:"pointer",fontSize:"0.72rem",color:"#dc2626",fontWeight:600,fontFamily:"inherit"}}>{t.delete}</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Expanded installment history */}
+            {isExpanded&&(
+              <div style={{borderTop:"1px solid #e5e7eb"}}>
+                {/* Totals summary bar */}
+                <div style={{display:"flex",gap:"0.4rem",padding:"0.5rem 1rem",background:"#f9fafb",flexWrap:"wrap"}}>
+                  {[
+                    {label:t.principalPaid, value:fmtFn(principalPaid), color:"#16a34a"},
+                    {label:t.interestPaid,  value:fmtFn(interestPaid),  color:"#7c3aed"},
+                    ...(lateFee>0?[{label:t.lateFee,value:fmtFn(lateFee),color:"#d97706"}]:[]),
+                    {label:t.remaining,     value:fmtFn(remaining),     color:isPaid?"#16a34a":"#dc2626"},
+                  ].map((item,i)=>(
+                    <div key={i} style={{background:"#fff",borderRadius:"0.4rem",padding:"0.3rem 0.5rem",borderLeft:`3px solid ${item.color}`,flex:"1 1 80px"}}>
+                      <div style={{fontSize:"0.6rem",color:"#6b7280",fontWeight:600}}>{item.label}</div>
+                      <div style={{fontSize:"0.78rem",fontWeight:700,color:item.color}}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Payment rows */}
+                {pmts.length===0
+                  ?<div style={{padding:"1rem",textAlign:"center",color:"#9ca3af",fontSize:"0.82rem",fontStyle:"italic"}}>{isEn?"No payments recorded yet.":"\u0905\u0939\u093f\u0932\u0947\u0938\u092e\u092e \u0915\u0941\u0928\u0948 \u0915\u093f\u0938\u094d\u0924 \u091b\u0948\u0928\u0964"}</div>
+                  :(
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.78rem"}}>
+                        <thead>
+                          <tr style={{background:"#f3f4f6"}}>
+                            {[t.date,t.principalPaid,t.interestPaid,t.lateFee,t.signature].map(h=>(
+                              <th key={h} style={{padding:"0.45rem 0.75rem",textAlign:"left",color:"#374151",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e5e7eb"}}>{h}</th>
+                            ))}
+                            {isAdmin&&<th style={{padding:"0.45rem 0.75rem",borderBottom:"1px solid #e5e7eb"}}></th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pmts.map((p,i)=>(
+                            <tr key={p.id||i} style={{background:i%2===0?"#fff":"#f9fafb",borderBottom:"1px solid #f3f4f6"}}>
+                              <td style={{padding:"0.45rem 0.75rem",whiteSpace:"nowrap"}}>{displayDate(p.date,lang,useBS)}</td>
+                              <td style={{padding:"0.45rem 0.75rem",color:"#16a34a",fontWeight:600}}>{fmtFn(p.principalPaid||0)}</td>
+                              <td style={{padding:"0.45rem 0.75rem",color:"#7c3aed"}}>{fmtFn(p.interestPaid||0)}</td>
+                              <td style={{padding:"0.45rem 0.75rem",color:p.lateFee>0?"#d97706":"#9ca3af"}}>{p.lateFee>0?fmtFn(p.lateFee):"\u2014"}</td>
+                              <td style={{padding:"0.45rem 0.75rem"}}>{p.signature||"\u2014"}</td>
+                              {isAdmin&&(
+                                <td style={{padding:"0.45rem 0.5rem"}}>
+                                  <div style={{display:"flex",gap:3}}>
+                                    <button type="button" onClick={()=>{setPayForm({...p});setModal("editPayment");}} style={{background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:"0.3rem",padding:"3px 6px",cursor:"pointer",fontSize:"0.68rem",color:"#0369a1",fontWeight:600,fontFamily:"inherit"}}>{t.edit}</button>
+                                    <button type="button" onClick={()=>deletePayment(p.id)} style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:"0.3rem",padding:"3px 6px",cursor:"pointer",fontSize:"0.68rem",color:"#dc2626",fontWeight:600,fontFamily:"inherit"}}>{t.delete}</button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                }
+              </div>
+            )}
           </div>
-          <Field label={t.signature} value={form.signature} onChange={f("signature")}/>
+        );
+      })}
+
+      {/* ADD / EDIT LOAN MODAL */}
+      {(modal==="addLoan"||modal==="editLoan")&&(
+        <Modal title={modal==="addLoan"?(isEn?"New Loan Account":"\u0928\u092f\u093e\u0901 \u090b\u0923 \u0916\u093e\u0924\u093e"):(isEn?"Edit Loan":"\u090b\u0923 \u0938\u092e\u094d\u092a\u093e\u0926\u0928")} onClose={()=>setModal(null)}>
+          <Field label={t.member} type="select" value={loanForm.memberId} onChange={lf("memberId")} options={memberOptions} required/>
+          <Field label={isEn?"Start Date":"\u090b\u0923 \u092e\u093f\u0924\u093f"} type="date" value={loanForm.startDate} onChange={lf("startDate")} required/>
+          <Field label={t.particulars} value={loanForm.particulars} onChange={lf("particulars")}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem"}}>
+            <Field label={`${t.loanAmount} (\u0930\u0942)`} type="number" value={loanForm.principal} onChange={lf("principal")} required/>
+            <Field label={isEn?"Interest Rate (%)":"\u092c\u094d\u092f\u093e\u091c \u0926\u0930 (%)"} type="number" value={loanForm.interestRate} onChange={lf("interestRate")}/>
+            <Field label={isEn?"Duration (months)":"\u0905\u0935\u0927\u093f (\u092e\u0939\u093f\u0928\u093e)"} type="select" value={String(loanForm.duration)} onChange={v=>lf("duration")(+v)}
+              options={[{value:"6",label:isEn?"6 Months":"6 \u092e\u0939\u093f\u0928\u093e"},{value:"12",label:isEn?"12 Months":"12 \u092e\u0939\u093f\u0928\u093e"},{value:"24",label:isEn?"24 Months":"24 \u092e\u0939\u093f\u0928\u093e"},{value:"36",label:isEn?"36 Months":"36 \u092e\u0939\u093f\u0928\u093e"}]}/>
+          </div>
           <div style={{display:"flex",gap:"0.5rem",justifyContent:"flex-end",marginTop:"1rem"}}>
-            <button onClick={()=>setModal(null)} style={{padding:"0.55rem 1rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.cancel}</button>
-            <Btn onClick={save}>{t.save}</Btn>
+            <button type="button" onClick={()=>setModal(null)} style={{padding:"0.55rem 1rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.cancel}</button>
+            <Btn onClick={saveLoan}>{t.save}</Btn>
           </div>
         </Modal>
       )}
+
+      {/* ADD / EDIT PAYMENT MODAL */}
+      {(modal==="addPayment"||modal==="editPayment")&&(()=>{
+        const parentLoan=loans.find(l=>l.id===payForm.loanId);
+        const paidSoFar=(loanPayments||[]).filter(p=>p.loanId===payForm.loanId&&(modal==="addPayment"||p.id!==payForm.id)).reduce((s,p)=>s+(p.principalPaid||0),0);
+        const loanRemaining=Math.max(0,(parentLoan?.principal||0)-paidSoFar);
+        return(
+          <Modal title={modal==="addPayment"?(isEn?"Add Installment":"\u0915\u093f\u0938\u094d\u0924 \u0925\u092a\u094d\u0928\u0941\u0939\u094b\u0938\u094d"):(isEn?"Edit Installment":"\u0915\u093f\u0938\u094d\u0924 \u0938\u092e\u094d\u092a\u093e\u0926\u0928")} onClose={()=>setModal(null)}>
+            {parentLoan&&(
+              <div style={{background:"#f0fdf4",borderRadius:"0.5rem",padding:"0.5rem 0.75rem",marginBottom:"0.75rem",fontSize:"0.8rem",color:"#166534",border:"1px solid #bbf7d0"}}>
+                {isEn?"Loan":"\u090b\u0923"}: <strong>{getMemberDisplayName(getMember(parentLoan.memberId),lang)}</strong>&nbsp;\u2014&nbsp;{isEn?"Remaining":"\u092c\u093e\u0901\u0915\u0940"}: <strong>{fmtFn(loanRemaining)}</strong>
+              </div>
+            )}
+            <Field label={t.date} type="date" value={payForm.date} onChange={pf("date")} required/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem"}}>
+              <Field label={`${t.principalPaid} (\u0930\u0942)`} type="number" value={payForm.principalPaid} onChange={pf("principalPaid")}/>
+              <Field label={`${t.interestPaid} (\u0930\u0942)`} type="number" value={payForm.interestPaid} onChange={pf("interestPaid")}/>
+              <Field label={`${t.lateFee} (\u0930\u0942)`} type="number" value={payForm.lateFee} onChange={pf("lateFee")}/>
+            </div>
+            <Field label={t.signature} value={payForm.signature} onChange={pf("signature")}/>
+            <div style={{display:"flex",gap:"0.5rem",justifyContent:"flex-end",marginTop:"1rem"}}>
+              <button type="button" onClick={()=>setModal(null)} style={{padding:"0.55rem 1rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.cancel}</button>
+              <Btn onClick={savePayment}>{t.save}</Btn>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
+
 
 // SECTION 14: CASH BOOK (auto-sync) — with dynamic category filtering by txType
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3035,7 +3218,7 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 17: REPORTS DASHBOARD — Income/Expense + Asset/Liability + Monthly
 // ═══════════════════════════════════════════════════════════════════════════════
-function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin,categories}){
+function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [subTab,setSubTab]=useState("ie");
   const [mode,setMode]=useState("monthly");
 
@@ -3080,11 +3263,12 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
 
   // ── Monthly summary ─────────────────────────────────────────────────────────
   const fS=filterBS(savings);
-  const fL=filterBS(loans);
+  const fL=loans.filter(l=>{const bs=adToBS(l.startDate||l.date||"");return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);});
   const rSaving=fS.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
-  const rLoanIssued=fL.reduce((a,l)=>a+(l.loanAmount||0),0);
-  const rPrincipal=fL.reduce((a,l)=>a+(l.principalPaid||0),0);
-  const rInterest=fL.reduce((a,l)=>a+(l.interestPaid||0),0);
+  const rLoanIssued=fL.reduce((a,l)=>a+(l.principal||0),0);
+  const fLP=(loanPayments||[]).filter(p=>{const bs=adToBS(p.date);return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);});
+  const rPrincipal=fLP.reduce((a,p)=>a+(p.principalPaid||0),0);
+  const rInterest=fLP.reduce((a,p)=>a+(p.interestPaid||0),0);
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
   const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
   const sigNames=lang==="np"?["अध्यक्ष","उपाध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Vice-President","Secretary","Treasurer"];

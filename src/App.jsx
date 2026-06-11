@@ -3447,7 +3447,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
       {subTab==="balance"&&(
         <div>
           {/* Balance indicator */}
-          <div style={{background:`linear-gradient(135deg,${Math.abs(balanceDiff)<1?"#166534,#16a34a":"#991b1b,#dc2626"})`,borderRadius:"0.875rem",padding:"1rem 1.25rem",marginBottom:"0.85rem",color:"#fff",textAlign:"center"}}>
+          <div style={{background:`linear-gradient(135deg,${Math.abs(balanceDiff)<1?"#166534,#16a34a":balanceDiff>0?"#1e40af,#2563eb":"#991b1b,#dc2626"})`,borderRadius:"0.875rem",padding:"1rem 1.25rem",marginBottom:"0.85rem",color:"#fff",textAlign:"center"}}>
             <div style={{fontSize:"0.72rem",fontWeight:600,opacity:0.85,marginBottom:3,letterSpacing:"0.04em"}}>{lang==="np"?"सम्पत्ति — दायित्व":"ASSETS — LIABILITIES"}</div>
             <div style={{fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.01em"}}>{fmtFn(Math.abs(balanceDiff))}</div>
             <div style={{fontSize:"0.7rem",opacity:0.8,marginTop:3}}>{Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):(balanceDiff>0?(lang==="np"?"▲ अतिरिक्त सम्पत्ति":"▲ Asset surplus"):(lang==="np"?"▼ घाटा":"▼ Deficit"))}</div>
@@ -3480,7 +3480,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
 
           {/* Liabilities card */}
           <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",marginBottom:"0.75rem"}}>
-            <div style={{background:"linear-gradient(135deg,#7c2d12,#dc2626)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{background:"linear-gradient(135deg,#1e40af,#2563eb)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontWeight:700,fontSize:"0.88rem"}}>📑 {lang==="np"?"पुँजी तथा दायित्व":"Capital & Liabilities"}</span>
               <span style={{fontWeight:800,fontSize:"0.95rem"}}>{fmtFn(totalLiabilities)}</span>
             </div>
@@ -3488,17 +3488,17 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
               {label:lang==="np"?"सदस्यको बचत (Members Share)":"Members' Share Capital", val:membersShare, note:lang==="np"?"बचत लेजर":"Savings Ledger"},
               {label:cumulativeProfit>=0?(lang==="np"?"जोड: नाफा (Add: Profit)":"Add: Profit"):(lang==="np"?"घटाउ: घाटा (Less: Loss)":"Less: Loss"), val:Math.abs(cumulativeProfit), note:lang==="np"?"आय-व्यय":"Income/Expense", profit:cumulativeProfit},
             ].map((r,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #fff1f2"}}>
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #e0e7ff"}}>
                 <div>
                   <div style={{fontSize:"0.83rem",color:"#374151",fontWeight:500}}>{r.label}</div>
                   <div style={{fontSize:"0.68rem",color:"#9ca3af"}}>{r.note}</div>
                 </div>
-                <span style={{fontWeight:700,color:r.profit!==undefined?(r.profit>=0?"#16a34a":"#dc2626"):"#7c2d12",fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
+                <span style={{fontWeight:700,color:r.profit!==undefined?(r.profit>=0?"#16a34a":"#dc2626"):"#374151",fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
               </div>
             ))}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#fff1f2",fontWeight:700,fontSize:"0.9rem"}}>
-              <span style={{color:"#7c2d12"}}>{lang==="np"?"जम्मा पुँजी/दायित्व":"Total Capital & Liabilities"}</span>
-              <span style={{color:"#7c2d12"}}>{fmtFn(totalLiabilities)}</span>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#eff6ff",fontWeight:700,fontSize:"0.9rem"}}>
+              <span style={{color:"#1e40af"}}>{lang==="np"?"जम्मा पुँजी/दायित्व":"Total Capital & Liabilities"}</span>
+              <span style={{color:"#1e40af"}}>{fmtFn(totalLiabilities)}</span>
             </div>
           </div>
 

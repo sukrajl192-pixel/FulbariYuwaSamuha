@@ -246,6 +246,19 @@ function _setStatus(s) {
 function _saveQueue() {
   try { localStorage.setItem("fys_sync_q", JSON.stringify(_sync.queue)); } catch {}
 }
+function sanitizeForFirebase(val) {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "number") return (isNaN(val) || !isFinite(val)) ? 0 : val;
+  if (Array.isArray(val)) return val.map(sanitizeForFirebase);
+  if (typeof val === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) out[k] = sanitizeForFirebase(v);
+    }
+    return out;
+  }
+  return val;
+}
 function _flushQueue() {
   const paths = Object.keys(_sync.queue);
   if (!paths.length) { _setStatus("synced"); return; }
@@ -253,7 +266,7 @@ function _flushQueue() {
   let remaining = paths.length;
   paths.forEach(path => {
     const { data } = _sync.queue[path];
-    const payload = Array.isArray(data) && data.length === 0 ? null : data;
+    const payload = Array.isArray(data) && data.length === 0 ? null : sanitizeForFirebase(data);
     fbSet(fbRef(db, path), payload)
       .then(() => {
         delete _sync.queue[path]; _saveQueue();
@@ -293,7 +306,7 @@ function useFirebaseStore(fbPath, lsKey, seed) {
       if (raw === null || raw === undefined) {
         const local = lsGet(lsKey);
         if (local !== null) {
-          const payload = Array.isArray(local) && local.length === 0 ? null : local;
+          const payload = Array.isArray(local) && local.length === 0 ? null : sanitizeForFirebase(local);
           fbSet(dbRef, payload).catch(() => {});
         }
         return;
@@ -318,7 +331,7 @@ function useFirebaseStore(fbPath, lsKey, seed) {
     const dbRef = fbRef(db, fbPath);
     const _write = (next) => {
       lsSet(lsKey, next);
-      const payload = Array.isArray(next) && next.length === 0 ? null : next;
+      const payload = Array.isArray(next) && next.length === 0 ? null : sanitizeForFirebase(next);
       _setStatus("saving");
       if (!navigator.onLine) {
         _sync.queue[fbPath] = { data: next, ts: Date.now() };
@@ -1641,6 +1654,25 @@ export default function App(){
     else setIE(i=>i.filter(x=>x.txId!==en.txId)); // remove stale sync if type changed
   },[]);
   const delBank=useCallback(id=>{ const en=bank.find(b=>b.id===id); setBank(b=>b.filter(x=>x.id!==id)); if(en?.txId) setIE(i=>i.filter(x=>x.txId!==en.txId)); },[bank]);
+
+
+  // ── Migrate old-format loans (loanAmount/principalPaid fields → new structure) ──
+  useEffect(()=>{
+    const needsMigration=loans.some(l=>l.loanAmount!==undefined&&l.principal===undefined);
+    if(!needsMigration)return;
+    setLoans(prev=>prev.map(l=>{
+      if(l.loanAmount===undefined||l.principal!==undefined)return l;
+      return{
+        id:l.id,memberId:l.memberId||"",
+        startDate:l.date||l.startDate||today(),
+        particulars:l.particulars||"",
+        principal:+(l.loanAmount||0),
+        interestRate:+(l.interestRate||12),
+        duration:+(l.duration||12),
+        modifiedAt:l.modifiedAt||new Date().toISOString(),
+      };
+    }));
+  },[loans]);
 
   // ── Computed totals ────────────────────────────────────────────────────────
   const totalSaving=savings.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);

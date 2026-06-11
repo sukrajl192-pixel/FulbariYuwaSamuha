@@ -1364,210 +1364,57 @@ function CategoryManager({categories,setCategories,onClose,t,cash,bank,ie,saving
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MEMBER DASHBOARD — read-only view shown to users with role="member"
-// They see their own savings/loan records + group summary.
+// They see group totals and their own savings/loan records only.
 // No add/edit/delete buttons visible. No admin pages accessible.
 // ═══════════════════════════════════════════════════════════════════════════════
-function useWindowWidth(){
-  const [w,setW]=useState(()=>window.innerWidth);
-  useEffect(()=>{
-    const h=()=>setW(window.innerWidth);
-    window.addEventListener("resize",h);
-    return()=>window.removeEventListener("resize",h);
-  },[]);
-  return w;
-}
-
 function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
   totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,
   members,savings,loans,loanPayments,getMember}){
+  const [tab,setTab]=useState("summary");
 
-  const winW=useWindowWidth();
-  const isMobile=winW<640;
-  const isEn=lang==="en";
-  const [tab,setTab]=useState("mine");
-  const [expandedLoan,setExpandedLoan]=useState(null);
-
-  // ── Link logged-in user to a member record by displayName ──────────────────
-  const myMember=members.find(m=>{
-    const dn=(currentUser.displayName||"").toLowerCase().trim();
-    return(m.name||"").toLowerCase().trim()===dn||(m.nameEn||"").toLowerCase().trim()===dn;
-  });
-
-  // ── My filtered data ───────────────────────────────────────────────────────
-  const mySavings  =myMember?[...savings].filter(s=>s.memberId===myMember.id).sort((a,b)=>b.date.localeCompare(a.date)):[];
-  const myLoans    =myMember?[...loans].filter(l=>l.memberId===myMember.id).sort((a,b)=>(b.startDate||"").localeCompare(a.startDate||"")):[];
-  const myPayments =myMember?myLoans.flatMap(l=>(loanPayments||[]).filter(p=>p.loanId===l.id).map(p=>({...p,_loan:l}))).sort((a,b)=>b.date.localeCompare(a.date)):[];
-
-  // ── My personal totals ─────────────────────────────────────────────────────
-  const myTotalSaved    =mySavings.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
-  const myTotalBorrowed =myLoans.reduce((a,l)=>a+(l.principal||0),0);
-  const myOutstanding   =myLoans.reduce((a,l)=>{
-    const paid=(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((s,p)=>s+(p.principalPaid||0),0);
-    return a+Math.max(0,(l.principal||0)-paid);
-  },0);
-  const myInterestPaid  =myPayments.reduce((a,p)=>a+(p.interestPaid||0),0);
-  const myLateFees      =myPayments.reduce((a,p)=>a+(p.lateFee||0),0);
-
-  // ── Shared colours ─────────────────────────────────────────────────────────
-  const BLUE  ="#1565c0";
-  const GREEN ="#16a34a";
-  const RED   ="#dc2626";
-  const AMBER ="#d97706";
-  const PURPLE="#7c3aed";
-
-  // ── Sub-components ─────────────────────────────────────────────────────────
-  const StatCard=({label,value,color,icon,sub})=>(
-    <div style={{
-      background:"#fff",borderRadius:"0.875rem",padding:isMobile?"0.85rem 1rem":"1rem 1.1rem",
-      boxShadow:"0 2px 10px rgba(0,0,0,0.07)",borderLeft:`4px solid ${color}`,
-      display:"flex",alignItems:"center",gap:"0.75rem",
-    }}>
-      <div style={{width:42,height:42,borderRadius:"50%",background:color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.25rem",flexShrink:0}}>{icon}</div>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:"0.68rem",color:"#6b7280",fontWeight:600,marginBottom:1,textTransform:"uppercase",letterSpacing:"0.03em"}}>{label}</div>
-        <div style={{fontSize:isMobile?"1.05rem":"1.15rem",fontWeight:700,color:"#111827",lineHeight:1.2}}>{value}</div>
-        {sub&&<div style={{fontSize:"0.67rem",color:"#9ca3af",marginTop:2}}>{sub}</div>}
-      </div>
-    </div>
-  );
-
-  // Card view for a saving row (mobile)
-  const SavingCard=({s,i})=>(
-    <div style={{background:i%2===0?"#fff":"#f0f9ff",borderRadius:"0.75rem",padding:"0.75rem 1rem",
-      border:"1px solid #e0f2fe",marginBottom:"0.5rem",
-      boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"0.3rem"}}>
-        <div style={{fontWeight:600,fontSize:"0.85rem",color:"#1e3a5f"}}>{s.particulars||"—"}</div>
-        <div style={{fontSize:"0.72rem",color:"#6b7280",whiteSpace:"nowrap",marginLeft:8}}>{displayDate(s.date,lang,useBS)}</div>
-      </div>
-      <div style={{display:"flex",gap:"1rem",marginTop:"0.35rem"}}>
-        {s.deposit?<div style={{fontSize:"0.82rem",fontWeight:700,color:GREEN}}>+{fmtFn(s.deposit)}</div>:null}
-        {s.withdraw?<div style={{fontSize:"0.82rem",fontWeight:700,color:RED}}>-{fmtFn(s.withdraw)}</div>:null}
-        {!s.deposit&&!s.withdraw&&<div style={{fontSize:"0.82rem",color:"#9ca3af"}}>—</div>}
-      </div>
-      {s.signature&&<div style={{fontSize:"0.67rem",color:"#9ca3af",marginTop:3}}>{isEn?"Sig:":"हस्ताक्षर:"} {s.signature}</div>}
-    </div>
-  );
-
-  // Loan card (expandable)
-  const LoanCard=({loan,idx})=>{
-    const pmts=(loanPayments||[]).filter(p=>p.loanId===loan.id).sort((a,b)=>b.date.localeCompare(a.date));
-    const paidP=pmts.reduce((s,p)=>s+(p.principalPaid||0),0);
-    const paidI=pmts.reduce((s,p)=>s+(p.interestPaid||0),0);
-    const paidL=pmts.reduce((s,p)=>s+(p.lateFee||0),0);
-    const remaining=Math.max(0,(loan.principal||0)-paidP);
-    const pct=loan.principal>0?Math.min(100,Math.round(paidP/loan.principal*100)):0;
-    const done=remaining<=0;
-    const open=expandedLoan===loan.id;
-    return(
-      <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 10px rgba(0,0,0,0.07)",marginBottom:"0.75rem",overflow:"hidden",border:`1px solid ${done?"#bbf7d0":"#e0f2fe"}`}}>
-        {/* Header */}
-        <div onClick={()=>setExpandedLoan(open?null:loan.id)}
-          style={{padding:"0.875rem 1rem",cursor:"pointer",display:"flex",alignItems:"center",gap:"0.75rem",
-            background:done?"#f0fdf4":"#f0f9ff",userSelect:"none"}}>
-          <div style={{width:40,height:40,borderRadius:"50%",background:done?GREEN+"22":BLUE+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.2rem",flexShrink:0}}>
-            {done?"✅":"🏦"}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:"0.88rem",color:"#1e3a5f",marginBottom:2}}>{loan.particulars}</div>
-            <div style={{fontSize:"0.72rem",color:"#6b7280"}}>
-              {displayDate(loan.startDate,lang,useBS)} &nbsp;·&nbsp; {loan.duration}{isEn?" mo":"म."} &nbsp;·&nbsp; {loan.interestRate}%
-            </div>
-          </div>
-          <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{fontSize:"0.95rem",fontWeight:700,color:done?GREEN:RED}}>{fmtFn(remaining)}</div>
-            <div style={{fontSize:"0.67rem",color:"#9ca3af"}}>{isEn?"remaining":"बाँकी"}</div>
-          </div>
-          <div style={{fontSize:"0.9rem",color:"#9ca3af",marginLeft:4,transition:"transform 0.2s",transform:open?"rotate(180deg)":"none"}}>▼</div>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{height:4,background:"#e5e7eb"}}>
-          <div style={{height:"100%",width:`${pct}%`,background:done?GREEN:BLUE,transition:"width 0.4s"}}/>
-        </div>
-
-        {/* Summary row */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:0,borderTop:"1px solid #f3f4f6"}}>
-          {[
-            [isEn?"Principal":"मूलधन",    fmtFn(loan.principal||0), BLUE],
-            [isEn?"Paid":"भुक्तानी",       fmtFn(paidP),             GREEN],
-            [isEn?"Interest":"ब्याज",      fmtFn(paidI),             AMBER],
-          ].map(([l,v,c],k)=>(
-            <div key={k} style={{textAlign:"center",padding:"0.6rem 0.25rem",borderRight:k<2?"1px solid #f3f4f6":"none"}}>
-              <div style={{fontSize:"0.67rem",color:"#9ca3af",marginBottom:2}}>{l}</div>
-              <div style={{fontSize:"0.85rem",fontWeight:700,color:c}}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Installment history — expanded */}
-        {open&&(
-          <div style={{borderTop:"1px solid #e5e7eb"}}>
-            <div style={{padding:"0.6rem 1rem",background:"#f8fafc",fontWeight:700,fontSize:"0.78rem",color:BLUE}}>
-              📋 {isEn?"Payment History":"भुक्तानी इतिहास"} ({pmts.length})
-              {paidL>0&&<span style={{marginLeft:8,color:RED,fontWeight:600}}>{isEn?"Late fees:":"ढिलाई:"} {fmtFn(paidL)}</span>}
-            </div>
-            {pmts.length===0&&(
-              <div style={{padding:"1rem",textAlign:"center",color:"#9ca3af",fontSize:"0.8rem",fontStyle:"italic"}}>{t.noData}</div>
-            )}
-            {pmts.map((p,pi)=>(
-              <div key={p.id||pi} style={{
-                display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr 1fr",
-                gap:"0.25rem",padding:"0.55rem 1rem",
-                background:pi%2===0?"#fff":"#f9fafb",
-                borderBottom:"1px solid #f3f4f6",fontSize:"0.78rem"}}>
-                <div>
-                  <div style={{color:"#9ca3af",fontSize:"0.64rem"}}>{t.date}</div>
-                  <div style={{fontWeight:600}}>{displayDate(p.date,lang,useBS)}</div>
-                </div>
-                <div>
-                  <div style={{color:"#9ca3af",fontSize:"0.64rem"}}>{t.principalPaid}</div>
-                  <div style={{fontWeight:700,color:GREEN}}>{fmtFn(p.principalPaid||0)}</div>
-                </div>
-                <div>
-                  <div style={{color:"#9ca3af",fontSize:"0.64rem"}}>{t.interestPaid}</div>
-                  <div style={{fontWeight:700,color:AMBER}}>{fmtFn(p.interestPaid||0)}</div>
-                </div>
-                <div>
-                  <div style={{color:"#9ca3af",fontSize:"0.64rem"}}>{t.lateFee||"Late Fee"}</div>
-                  <div style={{fontWeight:p.lateFee>0?700:400,color:p.lateFee>0?RED:"#9ca3af"}}>{p.lateFee?fmtFn(p.lateFee):"—"}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ── Tabs config ────────────────────────────────────────────────────────────
+  // Find this member's linked member record by matching displayName or just show all (member sees all group data read-only)
+  // For simplicity: members can view all group summary + full savings + full loan tables (read-only)
   const tabs=[
-    {id:"mine",    label:isEn?"My Account":"मेरो खाता",    emoji:"👤"},
-    {id:"savings", label:isEn?"My Savings":"मेरो बचत",      emoji:"💰"},
-    {id:"loans",   label:isEn?"My Loans":"मेरो ऋण",         emoji:"🏦"},
-    {id:"group",   label:isEn?"Group":"समूह",               emoji:"📊"},
+    {id:"summary",  label:lang==="np"?"सारांश":"Summary",   emoji:"📊"},
+    {id:"savings",  label:lang==="np"?"बचत":"Savings",      emoji:"💰"},
+    {id:"loans",    label:lang==="np"?"ऋण":"Loans",         emoji:"🏦"},
   ];
 
+  const StatC=({label,value,color,icon})=>(
+    <div style={{background:"#fff",borderRadius:"0.875rem",padding:"1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:`4px solid ${color}`,display:"flex",alignItems:"center",gap:"0.75rem"}}>
+      <div style={{background:color+"18",borderRadius:"50%",width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:"1.2rem"}}>{icon}</div>
+      <div>
+        <div style={{fontSize:"0.7rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{label}</div>
+        <div style={{fontSize:"1rem",fontWeight:700,color:"#111827"}}>{value}</div>
+      </div>
+    </div>
+  );
+
   return(
-    <div style={{minHeight:"100vh",background:"#f0f9ff",fontFamily:"'Poppins','Tiro Devanagari Sanskrit','Mangal',sans-serif"}}>
+    <div style={{minHeight:"100vh",background:"#f0fdf4",fontFamily:"'Poppins','Tiro Devanagari Sanskrit','Mangal',sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Sanskrit&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* Member header */}
       <header style={{
-        background:"linear-gradient(135deg,#1565c0,#1e40af)",
+        background:"linear-gradient(135deg,#1565c0,#1976d2)",
         color:"#fff",height:52,padding:"0 12px",
         display:"flex",alignItems:"center",gap:8,
         position:"sticky",top:0,zIndex:200,
-        boxShadow:"0 2px 12px rgba(21,101,192,0.35)",
+        boxShadow:"0 2px 10px rgba(0,0,0,0.3)",overflow:"hidden",
       }}>
         <div style={{width:36,height:36,borderRadius:"50%",background:"#fff",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-          <img src={LOGO_SRC} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>
+          <img src={LOGO_SRC} alt="Fulbari Yuwa Samuha Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}}/>
         </div>
         <div style={{flex:"1 1 0",minWidth:0,overflow:"hidden"}}>
-          <div style={{fontWeight:700,fontSize:"clamp(0.72rem,3.5vw,0.95rem)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.appName}</div>
-          <div style={{fontSize:"0.6rem",opacity:0.8,whiteSpace:"nowrap"}}>👤 {isEn?"Member Dashboard":"सदस्य ड्यासबोर्ड"} — {currentUser.displayName}</div>
+          <div style={{fontWeight:700,fontSize:"clamp(0.72rem,3.5vw,0.95rem)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {t.appName}
+          </div>
+          <div style={{fontSize:"0.6rem",opacity:0.8,whiteSpace:"nowrap"}}>
+            👤 {lang==="np"?"सदस्य ड्यासबोर्ड":"Member Dashboard"} — {currentUser.displayName}
+          </div>
         </div>
         <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
+          {/* Sync status indicator */}
           <SyncIndicator/>
           <button type="button" onClick={()=>setLang(lang==="np"?"en":"np")}
             style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:"0.4rem",width:32,height:32,cursor:"pointer",color:"#fff",fontSize:"0.7rem",fontWeight:700,fontFamily:"'Poppins',sans-serif",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1580,233 +1427,140 @@ function MemberDashboard({currentUser,onLogout,lang,setLang,t,fmtFn,useBS,
         </div>
       </header>
 
-      {/* ── Member banner ────────────────────────────────────────────────── */}
-      {myMember&&(
-        <div style={{background:"linear-gradient(90deg,#1e40af,#1565c0)",padding:"0.6rem 1rem",display:"flex",alignItems:"center",gap:"0.75rem"}}>
-          <div style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.2)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:"1rem",flexShrink:0}}>
-            {(getMemberDisplayName(myMember,lang)||"?")[0].toUpperCase()}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:"0.88rem",color:"#fff",fontFamily:smartFont(getMemberDisplayName(myMember,lang))}}>{getMemberDisplayName(myMember,lang)}</div>
-            <div style={{fontSize:"0.67rem",color:"rgba(255,255,255,0.75)"}}>
-              {myMember.position?myMember.position+" · ":""}{myMember.phone||""}{myMember.address?" · "+myMember.address:""}
-            </div>
-          </div>
-          <span style={{background:"rgba(255,255,255,0.18)",borderRadius:"1rem",padding:"3px 10px",fontSize:"0.68rem",fontWeight:700,color:"#fff",flexShrink:0}}>
-            {isEn?"Read Only":"पढ्ने मात्र"}
-          </span>
-        </div>
-      )}
-      {!myMember&&(
-        <div style={{background:"#fef3c7",padding:"0.5rem 1rem",display:"flex",alignItems:"center",gap:"0.5rem",borderBottom:"1px solid #fde68a"}}>
-          <span style={{fontSize:"1rem"}}>⚠️</span>
-          <span style={{fontSize:"0.75rem",color:"#92400e"}}>
-            {isEn?"Your account is not linked to a member record. Showing group data only."
-              :"तपाईंको खाता कुनै सदस्य रेकर्डसँग जोडिएको छैन। समूहको डेटा देखाइँदैछ।"}
-          </span>
-        </div>
-      )}
+      {/* Member role badge */}
+      <div style={{background:"#1565c0",padding:"0.45rem 1rem",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{background:"rgba(255,255,255,0.2)",borderRadius:"1rem",padding:"2px 12px",fontSize:"0.72rem",fontWeight:700,color:"#fff"}}>
+          👤 {lang==="np"?"सदस्य (पढ्ने मात्र)":"Member — Read Only"}
+        </span>
+        <span style={{fontSize:"0.68rem",color:"rgba(255,255,255,0.75)"}}>
+          {lang==="np"?"तपाईंसँग संपादन अनुमति छैन।":"You do not have edit permissions."}
+        </span>
+      </div>
 
-      {/* ── Tab nav ──────────────────────────────────────────────────────── */}
-      <nav style={{background:"#fff",borderBottom:"2px solid #bfdbfe",display:"flex",overflowX:"auto",boxShadow:"0 2px 4px rgba(0,0,0,0.04)",position:"sticky",top:52,zIndex:100}}>
+      {/* Tab nav */}
+      <nav style={{background:"#fff",borderBottom:"2px solid #bfdbfe",display:"flex",overflowX:"auto",boxShadow:"0 2px 4px rgba(0,0,0,0.05)"}}>
         {tabs.map(tb=>(
           <button key={tb.id} onClick={()=>setTab(tb.id)}
-            style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1,
-              padding:isMobile?"0.45rem 0.7rem":"0.55rem 1.2rem",
-              border:"none",background:"none",cursor:"pointer",
-              color:tab===tb.id?BLUE:"#6b7280",fontWeight:tab===tb.id?700:500,
-              fontSize:isMobile?"0.67rem":"0.72rem",fontFamily:"inherit",whiteSpace:"nowrap",
-              borderBottom:tab===tb.id?`3px solid ${BLUE}`:"3px solid transparent",transition:"all 0.15s",
-              flex:isMobile?"1":"unset"}}>
+            style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:2,padding:"0.55rem 1.2rem",border:"none",background:"none",cursor:"pointer",
+              color:tab===tb.id?"#1565c0":"#6b7280",fontWeight:tab===tb.id?700:500,
+              fontSize:"0.72rem",fontFamily:"inherit",whiteSpace:"nowrap",
+              borderBottom:tab===tb.id?"3px solid #1565c0":"3px solid transparent",transition:"all 0.15s"}}>
             <span style={{fontSize:"1rem"}}>{tb.emoji}</span>
             {tb.label}
           </button>
         ))}
       </nav>
 
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main style={{padding:isMobile?"0.75rem":"1rem 1.25rem",maxWidth:780,margin:"0 auto"}}>
+      <main style={{padding:"1rem",maxWidth:720,margin:"0 auto"}}>
 
-        {/* ════════════ MY ACCOUNT TAB ════════════ */}
-        {tab==="mine"&&(
+        {/* SUMMARY TAB */}
+        {tab==="summary"&&(
           <div>
-            {/* Personal stat cards */}
-            <h2 style={{color:BLUE,margin:"0 0 0.75rem",fontSize:"0.95rem",fontWeight:700}}>
-              👤 {isEn?"My Account Summary":"मेरो खाता सारांश"}
+            <h2 style={{color:"#1565c0",margin:"0 0 1rem",fontSize:"1rem"}}>
+              📊 {lang==="np"?"समूह सारांश":"Group Summary"}
             </h2>
-            {!myMember&&(
-              <div style={{background:"#fff7ed",borderRadius:"0.75rem",padding:"1rem",textAlign:"center",color:AMBER,fontSize:"0.85rem",marginBottom:"1rem",border:"1px solid #fed7aa"}}>
-                {isEn?"Link your account to a member profile to see personal data.":"व्यक्तिगत डेटा हेर्न आफ्नो खाता सदस्य प्रोफाइलसँग जोड्नुहोस्।"}
-              </div>
-            )}
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:"0.65rem",marginBottom:"1rem"}}>
-              <StatCard label={isEn?"My Savings":"मेरो बचत"}           value={fmtFn(myTotalSaved)}    color={GREEN}  icon="💰" sub={`${mySavings.length} ${isEn?"entries":"लेनदेन"}`}/>
-              <StatCard label={isEn?"Total Borrowed":"कुल ऋण"}          value={fmtFn(myTotalBorrowed)} color={BLUE}   icon="🏦" sub={`${myLoans.length} ${isEn?"loan(s)":"ऋण"}`}/>
-              <StatCard label={isEn?"Outstanding":"बाँकी ऋण"}           value={fmtFn(myOutstanding)}   color={RED}    icon="⚖️" sub={myOutstanding===0?(isEn?"✅ Clear":"✅ सफा"):""}/>
-              <StatCard label={isEn?"Interest Paid":"ब्याज भुक्तानी"}    value={fmtFn(myInterestPaid)}  color={AMBER}  icon="📈" sub={myLateFees>0?`${isEn?"Late fees:":"ढिलाई:"} ${fmtFn(myLateFees)}`:""}/>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:"0.75rem",marginBottom:"1.5rem"}}>
+              <StatC label={t.totalSaving}    value={fmtFn(totalSaving)}    color="#16a34a" icon="💰"/>
+              <StatC label={t.loanOutstanding} value={fmtFn(totalLoanOut)}  color="#dc2626" icon="🏦"/>
+              <StatC label={t.cashBalance}     value={fmtFn(cashBal)}       color="#d97706" icon="💵"/>
+              <StatC label={t.bankBalance}     value={fmtFn(bankBal)}       color="#2563eb" icon="🏛"/>
+              <StatC label={t.monthlyIncome}   value={fmtFn(monthlyIncome)} color="#7c3aed" icon="📈"/>
+              <StatC label={t.monthlyExpense}  value={fmtFn(monthlyExpense)}color="#be185d" icon="📉"/>
             </div>
-
-            {/* Member profile card */}
-            {myMember&&(
-              <div style={{background:"linear-gradient(135deg,#1565c0,#1e40af)",borderRadius:"1rem",padding:"1.25rem",color:"#fff",marginBottom:"1rem"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"1rem",marginBottom:"0.75rem"}}>
-                  <div style={{width:52,height:52,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:"1.4rem",flexShrink:0,border:"2px solid rgba(255,255,255,0.4)"}}>
-                    {(getMemberDisplayName(myMember,lang)||"?")[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:"1.05rem",fontFamily:smartFont(getMemberDisplayName(myMember,lang))}}>{getMemberDisplayName(myMember,lang)}</div>
-                    <div style={{fontSize:"0.72rem",opacity:0.8}}>{myMember.position||""}</div>
-                  </div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.5rem",fontSize:"0.78rem"}}>
-                  {[
-                    [isEn?"Phone":"फोन",       myMember.phone||"—"],
-                    [isEn?"Address":"ठेगाना",   myMember.address||"—"],
-                    [isEn?"Joined":"भर्ना",     displayDate(myMember.joinDate,lang,useBS)],
-                    [isEn?"Member ID":"सदस्य ID",myMember.id],
-                  ].map(([l,v],i)=>(
-                    <div key={i} style={{background:"rgba(255,255,255,0.12)",borderRadius:"0.5rem",padding:"0.4rem 0.65rem"}}>
-                      <div style={{fontSize:"0.63rem",opacity:0.7,marginBottom:1}}>{l}</div>
-                      <div style={{fontWeight:600,opacity:0.95,fontSize:"0.8rem",wordBreak:"break-all"}}>{v}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recent transactions mini-list */}
-            {myMember&&(
-              <div style={{background:"#fff",borderRadius:"0.875rem",padding:"0.875rem 1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
-                <div style={{fontWeight:700,fontSize:"0.82rem",color:BLUE,marginBottom:"0.6rem"}}>
-                  🕐 {isEn?"Recent Transactions":"हालका लेनदेनहरू"}
-                </div>
-                {[...mySavings].slice(0,5).map((s,i)=>(
-                  <div key={s.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.45rem 0",borderBottom:i<4?"1px solid #f3f4f6":"none"}}>
-                    <div>
-                      <div style={{fontSize:"0.82rem",fontWeight:600,color:"#1e3a5f"}}>{s.particulars}</div>
-                      <div style={{fontSize:"0.67rem",color:"#9ca3af"}}>{displayDate(s.date,lang,useBS)}</div>
-                    </div>
-                    <div style={{fontWeight:700,fontSize:"0.88rem",color:s.deposit>0?GREEN:RED}}>
-                      {s.deposit>0?"+"+fmtFn(s.deposit):"-"+fmtFn(s.withdraw)}
-                    </div>
-                  </div>
-                ))}
-                {mySavings.length===0&&<div style={{textAlign:"center",color:"#9ca3af",fontSize:"0.8rem",padding:"1rem 0",fontStyle:"italic"}}>{t.noData}</div>}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ════════════ MY SAVINGS TAB ════════════ */}
-        {tab==="savings"&&(
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
-              <h2 style={{color:BLUE,margin:0,fontSize:"0.95rem",fontWeight:700}}>💰 {isEn?"My Savings":"मेरो बचत"}</h2>
-              <div style={{display:"flex",gap:"0.5rem"}}>
-                <div style={{background:"#dcfce7",borderRadius:"0.5rem",padding:"0.3rem 0.75rem",fontSize:"0.78rem",fontWeight:700,color:GREEN}}>{fmtFn(myTotalSaved)}</div>
-                <div style={{background:"#dbeafe",borderRadius:"0.5rem",padding:"0.3rem 0.75rem",fontSize:"0.78rem",fontWeight:600,color:BLUE}}>{mySavings.length} {isEn?"entries":"लेनदेन"}</div>
+            <div style={{background:"linear-gradient(135deg,#1565c0,#1976d2)",borderRadius:"1rem",padding:"1.25rem",color:"#fff",textAlign:"center",marginBottom:"1rem"}}>
+              <div style={{fontSize:"0.85rem",opacity:0.85,marginBottom:4}}>{t.totalFund}</div>
+              <div style={{fontSize:"1.8rem",fontWeight:700}}>{fmtFn(totalFund)}</div>
+              <div style={{fontSize:"0.72rem",opacity:0.7,marginTop:4}}>
+                {t.totalMembers}: {members.length} {lang==="np"?"जना":"members"}
               </div>
             </div>
-
-            {mySavings.length===0&&(
-              <div style={{background:"#fff",borderRadius:"0.875rem",padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:"0.85rem",fontStyle:"italic",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
-                {myMember?t.noData:(isEn?"Account not linked to a member profile.":"खाता सदस्य प्रोफाइलसँग जोडिएको छैन।")}
-              </div>
-            )}
-
-            {/* Mobile: cards */}
-            {isMobile&&mySavings.map((s,i)=><SavingCard key={s.id||i} s={s} i={i}/>)}
-
-            {/* Desktop: table */}
-            {!isMobile&&mySavings.length>0&&(
-              <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.82rem"}}>
-                    <thead>
-                      <tr style={{background:"#dbeafe"}}>
-                        {[t.date,t.particulars,t.deposit,t.withdraw].map(h=>(
-                          <th key={h} style={{padding:"0.65rem 0.85rem",textAlign:"left",color:BLUE,fontWeight:700,whiteSpace:"nowrap",borderBottom:"2px solid #bfdbfe"}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {mySavings.map((s,i)=>(
-                        <tr key={s.id||i} style={{background:i%2===0?"#fff":"#f0f9ff",borderBottom:"1px solid #f3f4f6"}}>
-                          <td style={{padding:"0.55rem 0.85rem",whiteSpace:"nowrap"}}>{displayDate(s.date,lang,useBS)}</td>
-                          <td style={{padding:"0.55rem 0.85rem"}}>{s.particulars}</td>
-                          <td style={{padding:"0.55rem 0.85rem",color:GREEN,fontWeight:600}}>{s.deposit?fmtFn(s.deposit):"—"}</td>
-                          <td style={{padding:"0.55rem 0.85rem",color:RED}}>{s.withdraw?fmtFn(s.withdraw):"—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ════════════ MY LOANS TAB ════════════ */}
-        {tab==="loans"&&(
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
-              <h2 style={{color:BLUE,margin:0,fontSize:"0.95rem",fontWeight:700}}>🏦 {isEn?"My Loans":"मेरो ऋण"}</h2>
-              {myLoans.length>0&&(
-                <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap"}}>
-                  <div style={{background:"#fee2e2",borderRadius:"0.5rem",padding:"0.3rem 0.75rem",fontSize:"0.78rem",fontWeight:700,color:RED}}>{isEn?"Outstanding:":"बाँकी:"} {fmtFn(myOutstanding)}</div>
-                  <div style={{background:"#dcfce7",borderRadius:"0.5rem",padding:"0.3rem 0.75rem",fontSize:"0.78rem",fontWeight:700,color:GREEN}}>{isEn?"Paid:":"भुक्तानी:"} {fmtFn(myTotalBorrowed-myOutstanding)}</div>
-                </div>
-              )}
-            </div>
-
-            {myLoans.length===0&&(
-              <div style={{background:"#fff",borderRadius:"0.875rem",padding:"2rem",textAlign:"center",color:"#9ca3af",fontSize:"0.85rem",fontStyle:"italic",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
-                {myMember?t.noData:(isEn?"Account not linked to a member profile.":"खाता सदस्य प्रोफाइलसँग जोडिएको छैन।")}
-              </div>
-            )}
-
-            {myLoans.map((loan,idx)=><LoanCard key={loan.id||idx} loan={loan} idx={idx}/>)}
-          </div>
-        )}
-
-        {/* ════════════ GROUP TAB ════════════ */}
-        {tab==="group"&&(
-          <div>
-            <h2 style={{color:BLUE,margin:"0 0 0.75rem",fontSize:"0.95rem",fontWeight:700}}>📊 {isEn?"Group Summary":"समूह सारांश"}</h2>
-
-            {/* Group stat cards */}
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:"0.65rem",marginBottom:"1rem"}}>
-              <StatCard label={t.totalSaving}    value={fmtFn(totalSaving)}    color={GREEN}  icon="💰"/>
-              <StatCard label={t.loanOutstanding} value={fmtFn(totalLoanOut)}  color={RED}    icon="🏦"/>
-              <StatCard label={t.cashBalance}     value={fmtFn(cashBal)}       color={AMBER}  icon="💵"/>
-              <StatCard label={t.bankBalance}     value={fmtFn(bankBal)}       color={BLUE}   icon="🏛"/>
-              <StatCard label={t.monthlyIncome}   value={fmtFn(monthlyIncome)} color={PURPLE} icon="📈"/>
-              <StatCard label={t.monthlyExpense}  value={fmtFn(monthlyExpense)}color="#be185d" icon="📉"/>
-            </div>
-
-            {/* Total fund banner */}
-            <div style={{background:"linear-gradient(135deg,#1565c0,#1e40af)",borderRadius:"1rem",padding:"1.25rem",color:"#fff",textAlign:"center",marginBottom:"1rem"}}>
-              <div style={{fontSize:"0.82rem",opacity:0.85,marginBottom:4}}>{t.totalFund}</div>
-              <div style={{fontSize:"2rem",fontWeight:700}}>{fmtFn(totalFund)}</div>
-              <div style={{fontSize:"0.72rem",opacity:0.7,marginTop:4}}>{t.totalMembers}: {members.length} {isEn?"members":"जना"}</div>
-            </div>
-
-            {/* Members list */}
-            <div style={{background:"#fff",borderRadius:"0.875rem",padding:"0.875rem 1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
-              <h3 style={{margin:"0 0 0.65rem",color:BLUE,fontSize:"0.85rem"}}>👥 {t.members}</h3>
-              <div style={{display:"flex",flexDirection:"column",gap:"0.45rem"}}>
+            {/* Members list read-only */}
+            <div style={{background:"#fff",borderRadius:"0.875rem",padding:"1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+              <h3 style={{margin:"0 0 0.75rem",color:"#1565c0",fontSize:"0.9rem"}}>👥 {t.members}</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:"0.5rem"}}>
                 {members.map((m,i)=>(
-                  <div key={m.id||i} style={{display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.5rem 0.75rem",background:m.id===myMember?.id?"#eff6ff":"#f8fafc",borderRadius:"0.5rem",border:`1px solid ${m.id===myMember?.id?"#bfdbfe":"#e5e7eb"}`}}>
-                    <div style={{width:32,height:32,borderRadius:"50%",background:m.id===myMember?.id?BLUE:"#6b7280",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:"0.85rem",flexShrink:0}}>
+                  <div key={m.id||i} style={{display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.5rem 0.75rem",background:"#f0f9ff",borderRadius:"0.5rem",border:"1px solid #bae6fd"}}>
+                    <div style={{width:32,height:32,borderRadius:"50%",background:"#1565c0",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:"0.85rem",flexShrink:0}}>
                       {(getMemberDisplayName(m,lang)||"?")[0].toUpperCase()}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontWeight:600,fontSize:"0.85rem",fontFamily:smartFont(getMemberDisplayName(m,lang))}}>{getMemberDisplayName(m,lang)}</div>
-                      <div style={{fontSize:"0.7rem",color:"#6b7280"}}>{m.phone||""}{m.address?" · "+m.address:""}</div>
+                      <div style={{fontSize:"0.7rem",color:"#6b7280"}}>{m.phone||""} {m.address?`• ${m.address}`:""}</div>
                     </div>
-                    {m.id===myMember?.id&&<span style={{fontSize:"0.65rem",background:"#dbeafe",color:BLUE,borderRadius:"0.75rem",padding:"2px 8px",fontWeight:700,flexShrink:0}}>{isEn?"You":"तपाईं"}</span>}
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SAVINGS TAB */}
+        {tab==="savings"&&(
+          <div>
+            <h2 style={{color:"#1565c0",margin:"0 0 1rem",fontSize:"1rem"}}>💰 {t.saving}</h2>
+            <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8rem"}}>
+                  <thead>
+                    <tr style={{background:"#dbeafe"}}>
+                      {[t.date,t.member,t.particulars,t.deposit,t.withdraw].map(h=>(
+                        <th key={h} style={{padding:"0.6rem 0.75rem",textAlign:"left",color:"#1565c0",fontWeight:700,whiteSpace:"nowrap",borderBottom:"2px solid #bfdbfe"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savings.length===0&&(
+                      <tr><td colSpan={5} style={{textAlign:"center",padding:"2rem",color:"#9ca3af",fontStyle:"italic"}}>{t.noData}</td></tr>
+                    )}
+                    {[...savings].sort((a,b)=>b.date.localeCompare(a.date)).map((s,i)=>(
+                      <tr key={s.id||i} style={{background:i%2===0?"#fff":"#f0f9ff",borderBottom:"1px solid #f3f4f6"}}>
+                        <td style={{padding:"0.5rem 0.75rem",whiteSpace:"nowrap"}}>{displayDate(s.date,lang,useBS)}</td>
+                        <td style={{padding:"0.5rem 0.75rem"}}>{getMemberDisplayName(getMember(s.memberId),lang)}</td>
+                        <td style={{padding:"0.5rem 0.75rem"}}>{s.particulars}</td>
+                        <td style={{padding:"0.5rem 0.75rem",color:"#16a34a",fontWeight:600}}>{s.deposit?fmtFn(s.deposit):"—"}</td>
+                        <td style={{padding:"0.5rem 0.75rem",color:"#dc2626"}}>{s.withdraw?fmtFn(s.withdraw):"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LOANS TAB */}
+        {tab==="loans"&&(
+          <div>
+            <h2 style={{color:"#1565c0",margin:"0 0 1rem",fontSize:"1rem"}}>🏦 {t.loan}</h2>
+            <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8rem"}}>
+                  <thead>
+                    <tr style={{background:"#dbeafe"}}>
+                      {[t.date,t.member,t.particulars,t.loanAmount,t.remaining].map(h=>(
+                        <th key={h} style={{padding:"0.6rem 0.75rem",textAlign:"left",color:"#1565c0",fontWeight:700,whiteSpace:"nowrap",borderBottom:"2px solid #bfdbfe"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loans.length===0&&(
+                      <tr><td colSpan={5} style={{textAlign:"center",padding:"2rem",color:"#9ca3af",fontStyle:"italic"}}>{t.noData}</td></tr>
+                    )}
+                    {[...loans].sort((a,b)=>(b.startDate||b.date||"").localeCompare(a.startDate||a.date||"")).map((l,i)=>{
+                      const paid=(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((s,p)=>s+(p.principalPaid||0),0);
+                      const remaining=Math.max(0,(l.principal||0)-paid);
+                      return(
+                        <tr key={l.id||i} style={{background:i%2===0?"#fff":"#f0f9ff",borderBottom:"1px solid #f3f4f6"}}>
+                          <td style={{padding:"0.5rem 0.75rem",whiteSpace:"nowrap"}}>{displayDate(l.startDate||l.date,lang,useBS)}</td>
+                          <td style={{padding:"0.5rem 0.75rem"}}>{getMemberDisplayName(getMember(l.memberId),lang)}</td>
+                          <td style={{padding:"0.5rem 0.75rem"}}>{l.particulars}</td>
+                          <td style={{padding:"0.5rem 0.75rem",color:"#1565c0",fontWeight:600}}>{fmtFn(l.principal||0)}</td>
+                          <td style={{padding:"0.5rem 0.75rem",color:remaining>0?"#dc2626":"#16a34a",fontWeight:600}}>{fmtFn(remaining)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

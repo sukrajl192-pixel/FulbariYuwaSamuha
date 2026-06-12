@@ -1682,7 +1682,7 @@ export default function App(){
   const nowBS=adToBS(today());
   const monthlyIncome=ie.filter(x=>{const bs=adToBS(x.date);return bs.y===nowBS.y&&bs.m===nowBS.m;}).reduce((a,x)=>a+(x.income||0),0);
   const monthlyExpense=ie.filter(x=>{const bs=adToBS(x.date);return bs.y===nowBS.y&&bs.m===nowBS.m;}).reduce((a,x)=>a+(x.expense||0),0);
-  const totalFund=totalSaving+bankBal+cashBal+totalLoanOut;
+  const totalFund=totalSaving+ie.reduce((a,x)=>a+(x.income||0)-(x.expense||0),0);
 
   const getMember=id=>members.find(m=>m.id===id);
   const memberOptions=[{value:"",label:t.selectMember},...members.map(m=>({value:m.id,label:getMemberDisplayName(m,lang)}))];

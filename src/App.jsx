@@ -3355,6 +3355,8 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
   const rInterest=fLP.reduce((a,p)=>a+(p.interestPaid||0),0);
   const fBank=filterBS(bank);
   const bankInterestAmt=fBank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
+  const reportNetBalance=rSaving-rLoanIssued+rPrincipal+totalInc+bankInterestAmt-totalExp;
+  const netGroupFund=cashBal+bankBal;
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
   const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
   const sigNames=lang==="np"?["अध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Secretary","Treasurer"];
@@ -3370,10 +3372,10 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
       <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(totalInc)}</td></tr>
       <tr><td>${lang==="np"?"बैंक ब्याज":"Bank Interest"}</td><td style="text-align:right">${fmtFn(bankInterestAmt)}</td></tr>
       <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(totalExp)}</td></tr>
-      <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(profitLoss)}</td></tr>
+      <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(reportNetBalance)}</td></tr>
       <tr><td>${t.cashBalance}</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
       <tr><td>${t.bankBalance}</td><td style="text-align:right">${fmtFn(bankBal)}</td></tr>
-      <tr class="total-row"><td>${t.totalFund}</td><td style="text-align:right">${fmtFn(totalFund)}</td></tr>
+      <tr class="total-row"><td>${lang==="np"?"नेट समूह कोष":"Net Group Fund"}</td><td style="text-align:right">${fmtFn(netGroupFund)}</td></tr>
       <tr><td>${t.totalMembers}</td><td style="text-align:right">${members.length}</td></tr>
     </tbody></table>
     <div class="sig-area">${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}</div>`;
@@ -3600,8 +3602,8 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
                   <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
                 </div>
               ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"0.7rem 1rem",background:profitLoss>=0?"#1b5e20":"#dc2626",color:"#fff",fontWeight:700,fontSize:"0.95rem"}}>
-                <span>{t.netBalance}</span><span>{fmtFn(profitLoss)}</span>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"0.7rem 1rem",background:reportNetBalance>=0?"#1b5e20":"#dc2626",color:"#fff",fontWeight:700,fontSize:"0.95rem"}}>
+                <span>{t.netBalance}</span><span>{fmtFn(reportNetBalance)}</span>
               </div>
               <div style={{borderTop:"2px solid #e5e7eb"}}>
                 {[
@@ -3617,7 +3619,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
             </div>
             <div style={{padding:"0.75rem"}}>
               <div style={{display:"flex",justifyContent:"space-between",padding:"0.75rem 1rem",background:"#1b5e20",color:"#fff",borderRadius:"0.5rem",fontWeight:700,fontSize:"1rem"}}>
-                <span>{t.totalFund}</span><span>{fmtFn(totalFund)}</span>
+                <span>{lang==="np"?"नेट समूह कोष":"Net Group Fund"}</span><span>{fmtFn(netGroupFund)}</span>
               </div>
             </div>
             <div style={{padding:"0 1rem 1rem"}}>

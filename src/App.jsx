@@ -3353,6 +3353,8 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
   const fLP=(loanPayments||[]).filter(p=>{const bs=adToBS(p.date);return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);});
   const rPrincipal=fLP.reduce((a,p)=>a+(p.principalPaid||0),0);
   const rInterest=fLP.reduce((a,p)=>a+(p.interestPaid||0),0);
+  const fBank=filterBS(bank);
+  const bankInterestAmt=fBank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
   const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
   const sigNames=lang==="np"?["अध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Secretary","Treasurer"];
@@ -3366,7 +3368,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
       <tr><td>${lang==="np"?"ऋण जारी":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
       <tr><td>${lang==="np"?"साँवा उठान":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
       <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(totalInc)}</td></tr>
-      <tr><td>${lang==="np"?"ऋण ब्याज आम्दानी (Loan Interest)":"Loan Interest Income"}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
+      <tr><td>${lang==="np"?"बैंक ब्याज":"Bank Interest"}</td><td style="text-align:right">${fmtFn(bankInterestAmt)}</td></tr>
       <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(totalExp)}</td></tr>
       <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(profitLoss)}</td></tr>
       <tr><td>${t.cashBalance}</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
@@ -3587,12 +3589,12 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
             </div>
             <div>
               {[
-                [t.totalSaving,                                                          fmtFn(rSaving)],
-                [lang==="np"?"ऋण जारी":"Loan Issued",                                  fmtFn(rLoanIssued)],
-                [lang==="np"?"साँवा उठान":"Principal Recovered",                        fmtFn(rPrincipal)],
-                [t.incomeLabel,                                                          fmtFn(totalInc)],
-                [lang==="np"?"ऋण ब्याज आम्दानी (Loan Interest)":"Loan Interest Income", fmtFn(rInterest)],
-                [t.expenseLabel,                                                         fmtFn(totalExp)],
+                [t.totalSaving,                                       fmtFn(rSaving)],
+                [lang==="np"?"ऋण जारी":"Loan Issued",               fmtFn(rLoanIssued)],
+                [lang==="np"?"साँवा उठान":"Principal Recovered",     fmtFn(rPrincipal)],
+                [t.incomeLabel,                                       fmtFn(totalInc)],
+                [lang==="np"?"बैंक ब्याज":"Bank Interest",           fmtFn(bankInterestAmt)],
+                [t.expenseLabel,                                      fmtFn(totalExp)],
               ].map(([l,v],i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
                   <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>

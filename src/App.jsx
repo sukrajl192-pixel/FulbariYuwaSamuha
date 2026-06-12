@@ -802,7 +802,8 @@ function exportPrint(title, html) {
 </head>
 <body>
   <div class="header">
-    <div class="org">🌸 फुलबारी युवा समूह</div>
+    <img src="${LOGO_SRC}" alt="Fulbari Yuwa Samuha Logo" style="width:64px;height:64px;object-fit:cover;border-radius:50%;margin-bottom:0.5rem;"/>
+    <div class="org">फुलबारी युवा समूह</div>
     <div class="report-title">${title}</div>
   </div>
   ${html}

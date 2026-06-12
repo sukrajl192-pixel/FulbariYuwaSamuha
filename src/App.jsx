@@ -1679,9 +1679,9 @@ export default function App(){
   const totalLoanOut=loans.reduce((a,l)=>{const paid=(loanPayments||[]).filter(p=>p.loanId===l.id).reduce((s,p)=>s+(p.principalPaid||0),0);return a+Math.max(0,(l.principal||0)-paid);},0);
   const cashBal=cash.reduce((a,c)=>a+(c.cashIn||0)-(c.cashOut||0),0);
   const bankBal=bank.reduce((a,b)=>a+(b.deposit||0)-(b.withdrawal||0),0);
-  const nowM=new Date().getMonth(),nowY=new Date().getFullYear();
-  const monthlyIncome=ie.filter(x=>{const d=new Date(x.date);return d.getMonth()===nowM&&d.getFullYear()===nowY;}).reduce((a,x)=>a+(x.income||0),0);
-  const monthlyExpense=ie.filter(x=>{const d=new Date(x.date);return d.getMonth()===nowM&&d.getFullYear()===nowY;}).reduce((a,x)=>a+(x.expense||0),0);
+  const nowBS=adToBS(today());
+  const monthlyIncome=ie.filter(x=>{const bs=adToBS(x.date);return bs.y===nowBS.y&&bs.m===nowBS.m;}).reduce((a,x)=>a+(x.income||0),0);
+  const monthlyExpense=ie.filter(x=>{const bs=adToBS(x.date);return bs.y===nowBS.y&&bs.m===nowBS.m;}).reduce((a,x)=>a+(x.expense||0),0);
   const totalFund=totalSaving+bankBal+cashBal;
 
   const getMember=id=>members.find(m=>m.id===id);

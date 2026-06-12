@@ -3182,17 +3182,25 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [filterCat,setFilterCat]=useState("");
   const [filterYear,setFilterYear]=useState(currentBs.y||2081);
   const [filterMonth,setFilterMonth]=useState(0);
+  const [filterStart,setFilterStart]=useState("");
+  const [filterEnd,setFilterEnd]=useState("");
 
   const withBal=rows=>{let b=0;return[...rows].sort((a,bb)=>a.date.localeCompare(bb.date)).map(r=>{b+=(r.income||0)-(r.expense||0);return{...r,balance:b};});};
 
-  // Apply category + month/year filters
+  // Apply category + month/year + date range filters
   const filteredIE=(()=>{
     let res=ie;
     if(filterCat) res=res.filter(r=>r.category===filterCat);
-    if(filterYear) res=res.filter(r=>{
-      const bs=adToBS(r.date);
-      return filterMonth?bs.y===filterYear&&bs.m===filterMonth:bs.y===filterYear;
-    });
+    // Date range overrides BS year/month when set
+    if(filterStart||filterEnd){
+      if(filterStart) res=res.filter(r=>r.date>=filterStart);
+      if(filterEnd)   res=res.filter(r=>r.date<=filterEnd);
+    } else if(filterYear){
+      res=res.filter(r=>{
+        const bs=adToBS(r.date);
+        return filterMonth?bs.y===filterYear&&bs.m===filterMonth:bs.y===filterYear;
+      });
+    }
     return res;
   })();
 
@@ -3240,21 +3248,27 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
         </div>
       </div>
 
-      {/* Filter bar: category + year + month */}
+      {/* Filter bar: category + year + month + date range */}
       <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"0.6rem",alignItems:"center"}}>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={selStyle}>
           <option value="">{lang==="np"?"सबै श्रेणी":"All Categories"}</option>
           {catOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <select value={filterYear} onChange={e=>setFilterYear(Number(e.target.value))} style={selStyle}>
+        <select value={filterYear} onChange={e=>{setFilterYear(Number(e.target.value));setFilterStart("");setFilterEnd("");}} style={{...selStyle,opacity:filterStart||filterEnd?0.4:1}} disabled={!!(filterStart||filterEnd)}>
           {bsYears.map(y=><option key={y} value={y}>{y} {lang==="np"?"वि.सं.":"BS"}</option>)}
         </select>
-        <select value={filterMonth} onChange={e=>setFilterMonth(Number(e.target.value))} style={selStyle}>
+        <select value={filterMonth} onChange={e=>{setFilterMonth(Number(e.target.value));setFilterStart("");setFilterEnd("");}} style={{...selStyle,opacity:filterStart||filterEnd?0.4:1}} disabled={!!(filterStart||filterEnd)}>
           <option value={0}>{lang==="np"?"सबै महिना":"All Months"}</option>
           {bsMonthLabels.map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}
         </select>
-        {(filterCat||filterMonth!==0)&&(
-          <button type="button" onClick={()=>{setFilterCat("");setFilterMonth(0);}} style={{padding:"0.4rem 0.7rem",border:"1px solid #fecaca",borderRadius:"0.5rem",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontSize:"0.78rem",fontFamily:"inherit",fontWeight:600,flexShrink:0}}>
+      </div>
+      <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"0.75rem",alignItems:"center"}}>
+        <span style={{fontSize:"0.75rem",color:"#6b7280",fontWeight:600,whiteSpace:"nowrap"}}>{lang==="np"?"मिति दायरा:":"Date Range:"}</span>
+        <input type="date" value={filterStart} onChange={e=>{setFilterStart(e.target.value);}} style={{...selStyle,flex:"0 1 auto"}} placeholder={lang==="np"?"सुरु मिति":"Start Date"}/>
+        <span style={{fontSize:"0.78rem",color:"#9ca3af"}}>—</span>
+        <input type="date" value={filterEnd} onChange={e=>{setFilterEnd(e.target.value);}} style={{...selStyle,flex:"0 1 auto"}} placeholder={lang==="np"?"अन्त मिति":"End Date"}/>
+        {(filterCat||filterMonth!==0||filterStart||filterEnd)&&(
+          <button type="button" onClick={()=>{setFilterCat("");setFilterMonth(0);setFilterStart("");setFilterEnd("");}} style={{padding:"0.4rem 0.7rem",border:"1px solid #fecaca",borderRadius:"0.5rem",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontSize:"0.78rem",fontFamily:"inherit",fontWeight:600,flexShrink:0}}>
             {lang==="np"?"रिसेट":"Reset"}
           </button>
         )}

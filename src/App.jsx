@@ -3633,6 +3633,34 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
           </div>
         </div>
       )}
+
+      {/* ── Overall Cumulative Summary ──────────────────────────────────────── */}
+      {(()=>{
+        const allInc=ie.reduce((a,x)=>a+(x.income||0),0);
+        const allBankInt=bank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
+        const allExp=ie.reduce((a,x)=>a+(x.expense||0),0);
+        const isEn=lang==="en";
+        const cards=[
+          {label:isEn?"Total Income (All Time)":"जम्मा आम्दानी (सुरुदेखि)",   val:allInc,    color:"#16a34a", bg:"#f0fdf4", border:"#bbf7d0"},
+          {label:isEn?"Total Bank Interest (All Time)":"जम्मा बैंक ब्याज",      val:allBankInt,color:"#2563eb", bg:"#eff6ff", border:"#bfdbfe"},
+          {label:isEn?"Total Expense (All Time)":"जम्मा खर्च (सुरुदेखि)",       val:allExp,    color:"#dc2626", bg:"#fef2f2", border:"#fecaca"},
+        ];
+        return(
+          <div style={{marginTop:"1.25rem",background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
+            <div style={{background:"linear-gradient(135deg,#374151,#4b5563)",padding:"0.7rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,fontSize:"0.88rem"}}>📋 {isEn?"Overall Summary (From Start to Today)":"समग्र सारांश (सुरुदेखि आजसम्म)"}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0}}>
+              {cards.map((c,i)=>(
+                <div key={i} style={{background:c.bg,padding:"0.85rem 0.75rem",textAlign:"center",borderRight:i<cards.length-1?`1px solid ${c.border}`:"none"}}>
+                  <div style={{fontSize:"0.65rem",color:"#6b7280",fontWeight:600,marginBottom:"0.35rem",lineHeight:1.3}}>{c.label}</div>
+                  <div style={{fontSize:"0.95rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

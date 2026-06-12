@@ -1598,6 +1598,8 @@ export default function App(){
   const [ie,setIE]=useFirebaseStore("fys_data/ie",STORAGE_KEYS.ie,SEED_IE);
   const [categories,setCategories]=useFirebaseStore("fys_data/categories",STORAGE_KEYS.categories,SEED_CATEGORIES);
   const [search,setSearch]=useState("");
+  const [filterStart,setFilterStart]=useState("");
+  const [filterEnd,setFilterEnd]=useState("");
 
   // Strictly two roles: "admin" = full access, "member" = read-only
   // Any stored session from old multi-role system: treat non-"member" as admin
@@ -1881,7 +1883,7 @@ export default function App(){
 
         {/* ── FINANCE (Saving + Loan + Income/Expense combined) ── */}
         {tab==="finance"&&(
-          <FinancePage {...{savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,...sp}}/>
+          <FinancePage {...{savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,filterStart,setFilterStart,filterEnd,setFilterEnd,...sp}}/>
         )}
 
         {/* ── BOOKS (Cash Book + Bank Book combined) ── */}
@@ -1891,7 +1893,7 @@ export default function App(){
 
         {/* ── REPORT ── */}
         {tab==="report"&&(
-          <Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,...sp}}/>
+          <Reports {...{totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,filterStart,filterEnd,...sp}}/>
         )}
 
       </main>
@@ -1956,7 +1958,7 @@ export default function App(){
 // ═══════════════════════════════════════════════════════════════════════════════
 // FINANCE PAGE — Saving + Loan + Income/Expense with sub-tabs
 // ═══════════════════════════════════════════════════════════════════════════════
-function FinancePage({savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,lang,t,useBS,fmtFn,isAdmin,categories}){
+function FinancePage({savings,setSavings,loans,setLoans,loanPayments,setLoanPayments,ie,setIE,members,memberOptions,getMember,filterStart,setFilterStart,filterEnd,setFilterEnd,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [sub,setSub]=useState("saving");
   const subTabs=[
     {id:"saving", label:lang==="np"?"बचत":"Saving",  icon:"saving",  color:"#16a34a"},
@@ -1985,7 +1987,7 @@ function FinancePage({savings,setSavings,loans,setLoans,loanPayments,setLoanPaym
       </div>
       {sub==="saving"&&<SavingLedger {...{savings,setSavings,loans,members,memberOptions,getMember,...sp}}/>}
       {sub==="loan"&&<LoanLedger {...{loans,setLoans,loanPayments,setLoanPayments,members,memberOptions,getMember,...sp}}/>}
-      {sub==="ie"&&<IncomeExpense {...{ie,setIE,...sp}}/>}
+      {sub==="ie"&&<IncomeExpense {...{ie,setIE,filterStart,setFilterStart,filterEnd,setFilterEnd,...sp}}/>}
     </div>
   );
 }
@@ -3171,7 +3173,7 @@ function BankBook({bank,addBank,updBank,delBank,lang,t,useBS,fmtFn,isAdmin,categ
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 16: INCOME/EXPENSE — with category + month filters and totals bar
 // ═══════════════════════════════════════════════════════════════════════════════
-function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
+function IncomeExpense({ie,setIE,filterStart,setFilterStart,filterEnd,setFilterEnd,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [modal,setModal]=useState(null);
   const blank={date:today(),particulars:"",income:0,expense:0,category:"meetingExpense",source:"manual",txId:null};
   const [form,setForm]=useState(blank);
@@ -3182,9 +3184,6 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [filterCat,setFilterCat]=useState("");
   const [filterYear,setFilterYear]=useState(currentBs.y||2081);
   const [filterMonth,setFilterMonth]=useState(0);
-  const [filterStart,setFilterStart]=useState("");
-  const [filterEnd,setFilterEnd]=useState("");
-
   const withBal=rows=>{let b=0;return[...rows].sort((a,bb)=>a.date.localeCompare(bb.date)).map(r=>{b+=(r.income||0)-(r.expense||0);return{...r,balance:b};});};
 
   // Apply category + month/year + date range filters
@@ -3316,7 +3315,7 @@ function IncomeExpense({ie,setIE,lang,t,useBS,fmtFn,isAdmin,categories}){
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 17: REPORTS DASHBOARD — Income/Expense + Asset/Liability + Monthly
 // ═══════════════════════════════════════════════════════════════════════════════
-function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin,categories}){
+function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,filterStart,filterEnd,lang,t,useBS,fmtFn,isAdmin,categories}){
   const [subTab,setSubTab]=useState("ie");
   const [mode,setMode]=useState("monthly");
 
@@ -3335,7 +3334,10 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
   });
 
   // ── Income/Expense ─────────────────────────────────────────────────────────
-  const fIE=filterBS(ie);
+  // Shared date range (from IncomeExpense module) overrides BS period filter when active
+  const fIE=(filterStart||filterEnd)
+    ? ie.filter(x=>(filterStart?x.date>=filterStart:true)&&(filterEnd?x.date<=filterEnd:true))
+    : filterBS(ie);
   const totalInc=fIE.reduce((a,x)=>a+(x.income||0),0);
   const totalExp=fIE.reduce((a,x)=>a+(x.expense||0),0);
   const profitLoss=totalInc-totalExp;
@@ -3410,6 +3412,15 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>📄 {t.report}</h2>
         {subTab==="monthly"&&<Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>}
       </div>
+
+      {/* Date range active indicator */}
+      {(filterStart||filterEnd)&&(
+        <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"0.5rem",padding:"0.4rem 0.75rem",marginBottom:"0.6rem",display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap"}}>
+          <span style={{fontSize:"0.72rem",color:"#1e40af",fontWeight:700}}>🔍 {lang==="np"?"मिति दायरा सक्रिय:":"Date Range Active:"}</span>
+          <span style={{fontSize:"0.72rem",color:"#1e40af"}}>{filterStart||"…"} → {filterEnd||"…"}</span>
+          <span style={{fontSize:"0.7rem",color:"#6b7280",fontStyle:"italic"}}>{lang==="np"?"आय/व्यय तथ्यांक फिल्टर गरिएको":"Income/Expense data filtered"}</span>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div style={{display:"flex",gap:"0.35rem",marginBottom:"0.85rem",background:"#f0fdf4",borderRadius:"0.75rem",padding:"0.35rem"}}>

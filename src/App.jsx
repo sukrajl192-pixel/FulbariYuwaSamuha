@@ -3365,8 +3365,8 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
       <tr><td>${t.totalSaving}</td><td style="text-align:right">${fmtFn(rSaving)}</td></tr>
       <tr><td>${lang==="np"?"ऋण जारी":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
       <tr><td>${lang==="np"?"साँवा उठान":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
-      <tr><td>${t.interestIncome}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
       <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(totalInc)}</td></tr>
+      <tr><td>${lang==="np"?"ऋण ब्याज आम्दानी (Loan Interest)":"Loan Interest Income"}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
       <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(totalExp)}</td></tr>
       <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(profitLoss)}</td></tr>
       <tr><td>${t.cashBalance}</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
@@ -3587,12 +3587,12 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
             </div>
             <div>
               {[
-                [t.totalSaving,                                   fmtFn(rSaving)],
-                [lang==="np"?"ऋण जारी":"Loan Issued",            fmtFn(rLoanIssued)],
-                [lang==="np"?"साँवा उठान":"Principal Recovered",  fmtFn(rPrincipal)],
-                [t.interestIncome,                                fmtFn(rInterest)],
-                [t.incomeLabel,                                   fmtFn(totalInc)],
-                [t.expenseLabel,                                  fmtFn(totalExp)],
+                [t.totalSaving,                                                          fmtFn(rSaving)],
+                [lang==="np"?"ऋण जारी":"Loan Issued",                                  fmtFn(rLoanIssued)],
+                [lang==="np"?"साँवा उठान":"Principal Recovered",                        fmtFn(rPrincipal)],
+                [t.incomeLabel,                                                          fmtFn(totalInc)],
+                [lang==="np"?"ऋण ब्याज आम्दानी (Loan Interest)":"Loan Interest Income", fmtFn(rInterest)],
+                [t.expenseLabel,                                                         fmtFn(totalExp)],
               ].map(([l,v],i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
                   <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>

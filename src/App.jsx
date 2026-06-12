@@ -2044,6 +2044,57 @@ function Dashboard({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,month
         <div style={{fontSize:"2rem",fontWeight:700}}>{fmtFn(totalFund)}</div>
         <div style={{fontSize:"0.75rem",opacity:0.7,marginTop:4}}>{t.totalMembers}: {members.length} {lang==="np"?"जना":"members"}</div>
       </div>
+      {/* ── Fund Distribution Breakdown ─────────────────────────────────────── */}
+      {(()=>{
+        const assetTotal=cashBal+bankBal+totalLoanOut;
+        const pct=(v)=>assetTotal>0?Math.round(v/assetTotal*100):0;
+        const loanPct=pct(totalLoanOut);
+        const bankPct=pct(bankBal);
+        const cashPct=pct(cashBal);
+        const isEn=lang==="en";
+        const bars=[
+          {label:isEn?"Loans Out":"ऋण बाँकी",   val:totalLoanOut, pct:loanPct, color:"#dc2626", bg:"#fee2e2"},
+          {label:isEn?"Bank":"बैंक",               val:bankBal,     pct:bankPct, color:"#2563eb", bg:"#dbeafe"},
+          {label:isEn?"Cash":"नगद",                val:cashBal,     pct:cashPct, color:"#d97706", bg:"#fef3c7"},
+        ];
+        return(
+          <div style={{background:"#fff",borderRadius:"0.875rem",padding:"1rem 1.1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",marginBottom:"1.5rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+              <h3 style={{margin:0,color:"#1b5e20",fontSize:"0.88rem",fontWeight:700}}>
+                📊 {isEn?"Fund Distribution":"कोष वितरण"}
+              </h3>
+              <span style={{fontSize:"0.72rem",color:"#6b7280",fontWeight:500}}>
+                {isEn?"Asset Base:":"सम्पत्ति:"} <strong style={{color:"#111827"}}>{fmtFn(assetTotal)}</strong>
+              </span>
+            </div>
+            {/* Stacked bar */}
+            <div style={{display:"flex",height:10,borderRadius:"999px",overflow:"hidden",marginBottom:"0.85rem",gap:1}}>
+              {bars.map((b,i)=>b.pct>0&&(
+                <div key={i} style={{width:`${b.pct}%`,background:b.color,transition:"width 0.4s"}}/>
+              ))}
+              {assetTotal===0&&<div style={{width:"100%",background:"#e5e7eb"}}/>}
+            </div>
+            {/* Rows */}
+            {bars.map((b,i)=>(
+              <div key={i} style={{marginBottom:i<bars.length-1?"0.55rem":0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.2rem"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"0.45rem"}}>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:b.color,flexShrink:0}}/>
+                    <span style={{fontSize:"0.8rem",color:"#374151",fontWeight:500}}>{b.label}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:"0.65rem"}}>
+                    <span style={{fontSize:"0.78rem",color:"#6b7280"}}>{fmtFn(b.val)}</span>
+                    <span style={{fontSize:"0.78rem",fontWeight:700,color:b.color,minWidth:"2.8rem",textAlign:"right"}}>{b.pct}%</span>
+                  </div>
+                </div>
+                <div style={{height:5,background:"#f3f4f6",borderRadius:"999px",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${b.pct}%`,background:b.color,borderRadius:"999px",transition:"width 0.4s"}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <div style={{background:"#fff",borderRadius:"0.875rem",padding:"1rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
         <h3 style={{margin:"0 0 0.75rem",color:"#1b5e20",fontSize:"0.9rem"}}>{t.recentActivity}</h3>
         <Table t={t} cols={[

@@ -3354,7 +3354,7 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
   const rInterest=fLP.reduce((a,p)=>a+(p.interestPaid||0),0);
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
   const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
-  const sigNames=lang==="np"?["अध्यक्ष","उपाध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Vice-President","Secretary","Treasurer"];
+  const sigNames=lang==="np"?["अध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Secretary","Treasurer"];
 
   // Print HTML
   const printHTML=`

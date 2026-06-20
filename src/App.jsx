@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { ref as fbRef, set as fbSet, onValue } from "firebase/database";
+import { ref as fbRef, set as fbSet, onValue, get as fbGet } from "firebase/database";
 import { db } from "./firebase";
 
 // Logo SVG - inline, no external dependency
@@ -468,6 +468,332 @@ function importBackup(file, onDone) {
     }
   };
   reader.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BACKUP / RESTORE MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function BackupModal({ lang, users, members, savings, loans, loanPayments, cash, bank, ie, categories, onClose }) {
+  const isEn = lang === "en";
+  // step: "idle" | "exporting" | "exported" | "reading" | "confirm" | "restoring" | "restored" | "error"
+  const [step, setStep] = useState("idle");
+  const [restoreMode, setRestoreMode] = useState("overwrite");
+  const [pendingData, setPendingData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [exportStats, setExportStats] = useState(null);
+
+  const col = (arr) => Array.isArray(arr) ? arr.length : (arr && typeof arr === "object" ? Object.keys(arr).length : 0);
+
+  const COLLECTIONS = [
+    { key: "members",      label: isEn ? "Members"       : "सदस्यहरू",     data: members },
+    { key: "savings",      label: isEn ? "Savings"       : "बचतहरू",       data: savings },
+    { key: "loans",        label: isEn ? "Loans"         : "ऋणहरू",        data: loans },
+    { key: "loanPayments", label: isEn ? "Loan Payments" : "ऋण भुक्तानी",  data: loanPayments },
+    { key: "cash",         label: isEn ? "Cash Book"     : "नगद किताब",    data: cash },
+    { key: "bank",         label: isEn ? "Bank Book"     : "बैंक किताब",   data: bank },
+    { key: "ie",           label: isEn ? "Income/Expense": "आय/व्यय",      data: ie },
+    { key: "users",        label: isEn ? "Users"         : "प्रयोगकर्ता",  data: users },
+    { key: "categories",   label: isEn ? "Categories"    : "श्रेणीहरू",    data: categories },
+  ];
+
+  const doExport = () => {
+    setStep("exporting");
+    try {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0,10).replace(/-/g,"_");
+      const timeStr = now.toTimeString().slice(0,5).replace(":","-");
+      const catLabels = lsGet(STORAGE_KEYS.catLabels) || {};
+      const stats = {};
+      COLLECTIONS.forEach(c => { stats[c.key] = col(c.data); });
+      stats.catLabels = col(catLabels);
+      const backup = {
+        _version: DATA_VERSION,
+        _exported: now.toISOString(),
+        _app: "Fulbari Yuwa Samuha",
+        _collections: stats,
+        fys_data: { users, members, savings, loans, loanPayments, cash, bank, ie, categories, catLabels },
+      };
+      const json = JSON.stringify(backup, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `FYS_Backup_${dateStr}_${timeStr}.json`;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+      setExportStats(stats);
+      setStep("exported");
+    } catch (err) {
+      setErrorMsg(isEn ? `Export failed: ${err.message}` : `ब्याकअप असफल: ${err.message}`);
+      setStep("error");
+    }
+  };
+
+  const onFileSelect = (file) => {
+    if (!file) return;
+    setStep("reading");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        if (parsed._app !== "Fulbari Yuwa Samuha") {
+          setErrorMsg(isEn ? "Invalid file: not a Fulbari Yuwa Samuha backup." : "अमान्य फाइल: यो यस एपको ब्याकअप होइन।");
+          setStep("error"); return;
+        }
+        if (!parsed.fys_data || typeof parsed.fys_data !== "object") {
+          setErrorMsg(isEn ? "Invalid file: backup data missing or corrupted." : "अमान्य फाइल: ब्याकअप डाटा छैन वा बिग्रिएको छ।");
+          setStep("error"); return;
+        }
+        setPendingData(parsed);
+        setStep("confirm");
+      } catch {
+        setErrorMsg(isEn ? "Could not read file. Ensure it is a valid JSON backup." : "फाइल पढ्न सकिएन। सही JSON ब्याकअप फाइल छान्नुहोस्।");
+        setStep("error");
+      }
+    };
+    reader.onerror = () => { setErrorMsg(isEn ? "File read error." : "फाइल पढ्दा त्रुटि।"); setStep("error"); };
+    reader.readAsText(file);
+  };
+
+  const doRestore = async () => {
+    if (!pendingData) return;
+    setStep("restoring");
+    try {
+      const src = pendingData.fys_data;
+      const arrayCols = ["users","members","savings","loans","loanPayments","cash","bank","ie"];
+      const currentMap = { users, members, savings, loans, loanPayments, cash, bank, ie };
+      const writes = [];
+
+      for (const key of arrayCols) {
+        if (src[key] === undefined) continue;
+        const srcArr = Array.isArray(src[key]) ? src[key] : Object.values(src[key] || {});
+        let next;
+        if (restoreMode === "merge") {
+          const curr = currentMap[key] || [];
+          const existIds = new Set(curr.map(r => r?.id).filter(Boolean));
+          const incoming = srcArr.filter(r => r?.id && !existIds.has(r.id));
+          next = [...curr, ...incoming];
+        } else {
+          next = srcArr;
+        }
+        const payload = next.length === 0 ? null : sanitizeForFirebase(next);
+        writes.push(fbSet(fbRef(db, `fys_data/${key}`), payload).catch(() => {}));
+      }
+
+      const srcCats = src.categories && typeof src.categories === "object" ? src.categories : {};
+      const nextCats = restoreMode === "merge" ? { ...srcCats, ...(categories||{}) } : srcCats;
+      writes.push(fbSet(fbRef(db, "fys_data/categories"), sanitizeForFirebase(nextCats)).catch(() => {}));
+
+      const srcLabels = src.catLabels && typeof src.catLabels === "object" ? src.catLabels : {};
+      const currLabels = lsGet(STORAGE_KEYS.catLabels) || {};
+      const nextLabels = restoreMode === "merge" ? { ...srcLabels, ...currLabels } : srcLabels;
+      writes.push(fbSet(fbRef(db, "fys_data/catLabels"), sanitizeForFirebase(nextLabels)).catch(() => {}));
+
+      await Promise.all(writes);
+      setStep("restored");
+    } catch (err) {
+      setErrorMsg(isEn ? `Restore failed: ${err.message}` : `रिस्टोर असफल: ${err.message}`);
+      setStep("error");
+    }
+  };
+
+  const resetToIdle = () => { setStep("idle"); setErrorMsg(""); setPendingData(null); };
+
+  const pct = (n, total) => total > 0 ? `${Math.round(n/total*100)}%` : "0%";
+  const totalRecs = COLLECTIONS.reduce((s,c) => s + col(c.data), 0);
+
+  return (
+    <Modal title={`🗄️ ${isEn ? "Data Backup & Recovery" : "डाटा ब्याकअप / रिकभरी"}`} onClose={onClose}>
+
+      {/* ── IDLE / main screen ── */}
+      {(step === "idle" || step === "exported") && (
+        <>
+          {/* Summary strip */}
+          <div style={{background:"#f0fdf4",borderRadius:"0.6rem",padding:"0.75rem 1rem",marginBottom:"1rem",border:"1px solid #bbf7d0"}}>
+            <div style={{fontSize:"0.72rem",color:"#166534",fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>{isEn?"Current data snapshot":"हालको डाटा सारांश"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"0.3rem"}}>
+              {COLLECTIONS.map(c=>(
+                <div key={c.key} style={{fontSize:"0.7rem",color:"#374151"}}>
+                  <span style={{fontWeight:600,color:"#1b5e20"}}>{col(c.data)}</span> {c.label}
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:6,fontSize:"0.68rem",color:"#6b7280"}}>{isEn?`Total: ${totalRecs} records`:`जम्मा: ${totalRecs} रेकर्डहरू`}</div>
+          </div>
+
+          {step === "exported" && (
+            <div style={{background:"#dcfce7",border:"1px solid #86efac",borderRadius:"0.5rem",padding:"0.65rem 0.85rem",marginBottom:"0.75rem",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:"1rem"}}>✅</span>
+              <div style={{fontSize:"0.8rem",color:"#166534",fontWeight:600}}>
+                {isEn?"Backup downloaded successfully!":"ब्याकअप सफलतापूर्वक डाउनलोड भयो!"}
+              </div>
+            </div>
+          )}
+
+          {/* Export button */}
+          <button type="button" onClick={doExport}
+            style={{width:"100%",padding:"0.7rem",background:"#1b5e20",color:"#fff",border:"none",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:"0.85rem",marginBottom:"0.5rem",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            <Icon name="download" size={16} color="#fff"/>
+            {isEn?"📥 Download Backup (.json)":"📥 ब्याकअप डाउनलोड गर्नुहोस् (.json)"}
+          </button>
+          <div style={{fontSize:"0.7rem",color:"#6b7280",textAlign:"center",marginBottom:"1rem"}}>
+            {isEn?"Saves all app data as a JSON file with today's timestamp.":"सबै एप डाटा JSON फाइलमा आजको मितिसहित सेभ गर्छ।"}
+          </div>
+
+          <hr style={{border:"none",borderTop:"1px solid #e5e7eb",margin:"0.75rem 0"}}/>
+
+          {/* Import trigger */}
+          <label style={{display:"block",width:"100%",padding:"0.7rem",background:"#fff",color:"#1b5e20",border:"2px dashed #16a34a",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:"0.85rem",textAlign:"center",boxSizing:"border-box",marginBottom:"0.4rem"}}>
+            <Icon name="plus" size={14} color="#1b5e20" style={{verticalAlign:"middle",marginRight:4}}/>
+            {isEn?" 📂 Restore from Backup (.json)":" 📂 ब्याकअप फाइलबाट रिस्टोर गर्नुहोस्"}
+            <input type="file" accept=".json,application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)onFileSelect(f);e.target.value="";}}/>
+          </label>
+          <div style={{fontSize:"0.7rem",color:"#9ca3af",textAlign:"center"}}>
+            {isEn?"⚠ Restore will overwrite or merge existing data — you will confirm before anything changes.":"⚠ रिस्टोर गर्दा डाटा बदलिनुभन्दा पहिले पुष्टि सोधिनेछ।"}
+          </div>
+        </>
+      )}
+
+      {/* ── EXPORTING spinner ── */}
+      {step === "exporting" && (
+        <div style={{textAlign:"center",padding:"2rem 0"}}>
+          <div style={{fontSize:"2rem",animation:"spin 1s linear infinite",display:"inline-block"}}>⏳</div>
+          <div style={{marginTop:12,color:"#1b5e20",fontWeight:600}}>{isEn?"Preparing backup…":"ब्याकअप तयार हुँदैछ…"}</div>
+        </div>
+      )}
+
+      {/* ── READING spinner ── */}
+      {step === "reading" && (
+        <div style={{textAlign:"center",padding:"2rem 0"}}>
+          <div style={{fontSize:"2rem",animation:"spin 1s linear infinite",display:"inline-block"}}>📂</div>
+          <div style={{marginTop:12,color:"#1b5e20",fontWeight:600}}>{isEn?"Reading backup file…":"ब्याकअप फाइल पढ्दैछ…"}</div>
+        </div>
+      )}
+
+      {/* ── CONFIRM step ── */}
+      {step === "confirm" && pendingData && (
+        <>
+          <div style={{background:"#fefce8",border:"1px solid #fde047",borderRadius:"0.6rem",padding:"0.75rem 1rem",marginBottom:"1rem"}}>
+            <div style={{fontWeight:700,fontSize:"0.85rem",color:"#713f12",marginBottom:4}}>
+              {isEn?"⚠ Review before restoring":"⚠ रिस्टोर गर्नुभन्दा पहिले जाँच्नुस्"}
+            </div>
+            <div style={{fontSize:"0.72rem",color:"#78350f"}}>
+              {isEn
+                ?`Backup exported: ${pendingData._exported ? new Date(pendingData._exported).toLocaleString() : "unknown"} | Version: ${pendingData._version||"?"}`
+                :`ब्याकअप मिति: ${pendingData._exported ? new Date(pendingData._exported).toLocaleString() : "अज्ञात"} | संस्करण: ${pendingData._version||"?"}`}
+            </div>
+          </div>
+
+          {/* Collections from backup */}
+          {pendingData._collections && (
+            <div style={{background:"#f9fafb",borderRadius:"0.5rem",padding:"0.6rem 0.85rem",marginBottom:"1rem",border:"1px solid #e5e7eb"}}>
+              <div style={{fontSize:"0.7rem",fontWeight:700,color:"#374151",marginBottom:6,textTransform:"uppercase"}}>{isEn?"Collections in backup":"ब्याकअपमा डाटा"}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"0.25rem"}}>
+                {Object.entries(pendingData._collections).map(([k,v])=>(
+                  <div key={k} style={{fontSize:"0.68rem",color:"#374151"}}>
+                    <span style={{fontWeight:600,color:"#1b5e20"}}>{v}</span> {k}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Merge/Overwrite choice */}
+          <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"0.5rem",padding:"0.75rem",marginBottom:"1rem"}}>
+            <div style={{fontSize:"0.78rem",fontWeight:700,color:"#111827",marginBottom:"0.5rem"}}>{isEn?"Restore mode:":"रिस्टोर मोड:"}</div>
+            {[
+              { val:"overwrite", icon:"⛔", title: isEn?"Overwrite (recommended)":"ओभरराइट (सिफारिस)", desc: isEn?"Replace all current data with backup. Current data will be lost.":"हालको सम्पूर्ण डाटा ब्याकअपले बदल्नेछ। हालको डाटा हराउनेछ।" },
+              { val:"merge",     icon:"🔀", title: isEn?"Merge (add new only)":"मर्ज (नयाँ मात्र थप्नुस्)", desc: isEn?"Add records from backup that don't exist in current data (by ID). Existing records kept.":"ब्याकअपका नयाँ रेकर्डहरू (ID अनुसार) थपिनेछन्। हालका रेकर्डहरू सुरक्षित रहनेछन्।" },
+            ].map(opt=>(
+              <label key={opt.val} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"0.5rem 0",cursor:"pointer",borderBottom: opt.val==="overwrite"?"1px solid #f3f4f6":"none"}}>
+                <input type="radio" name="restoreMode" value={opt.val} checked={restoreMode===opt.val} onChange={()=>setRestoreMode(opt.val)} style={{marginTop:2,accentColor:"#1b5e20"}}/>
+                <div>
+                  <div style={{fontSize:"0.8rem",fontWeight:600,color:"#111827"}}>{opt.icon} {opt.title}</div>
+                  <div style={{fontSize:"0.68rem",color:"#6b7280",marginTop:2}}>{opt.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {/* Confirm warning */}
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"0.5rem",padding:"0.6rem 0.85rem",marginBottom:"1rem",fontSize:"0.78rem",color:"#991b1b",fontWeight:600}}>
+            {restoreMode==="overwrite"
+              ? (isEn?"⚠ This will REPLACE all existing data. This action cannot be undone.":"⚠ यसले सबै हालको डाटा मेटाउनेछ। यो कार्य पूर्ववत हुन सक्दैन।")
+              : (isEn?"ℹ Merge will add new records only. Your existing data will remain.":"ℹ मर्जले नयाँ रेकर्डहरू मात्र थप्नेछ। हालको डाटा सुरक्षित रहनेछ।")}
+          </div>
+
+          <div style={{display:"flex",gap:8}}>
+            <button type="button" onClick={resetToIdle}
+              style={{flex:1,padding:"0.65rem",background:"#f9fafb",color:"#374151",border:"1px solid #e5e7eb",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:"0.83rem"}}>
+              {isEn?"Cancel":"रद्द गर्नुहोस्"}
+            </button>
+            <button type="button" onClick={doRestore}
+              style={{flex:2,padding:"0.65rem",background: restoreMode==="overwrite"?"#dc2626":"#1b5e20",color:"#fff",border:"none",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:"0.83rem"}}>
+              {restoreMode==="overwrite"
+                ? (isEn?"⛔ Yes, Overwrite & Restore":"⛔ हो, ओभरराइट गरी रिस्टोर")
+                : (isEn?"🔀 Yes, Merge & Restore":"🔀 हो, मर्ज गरी रिस्टोर")}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── RESTORING spinner ── */}
+      {step === "restoring" && (
+        <div style={{textAlign:"center",padding:"2.5rem 0"}}>
+          <div style={{fontSize:"2.5rem",animation:"spin 1s linear infinite",display:"inline-block"}}>🔄</div>
+          <div style={{marginTop:14,color:"#1b5e20",fontWeight:700,fontSize:"0.95rem"}}>{isEn?"Restoring data to Firebase…":"Firebase मा डाटा रिस्टोर हुँदैछ…"}</div>
+          <div style={{marginTop:6,fontSize:"0.75rem",color:"#6b7280"}}>{isEn?"Please wait, do not close this window.":"कृपया प्रतीक्षा गर्नुहोस्, यो विन्डो नबन्द गर्नुहोस्।"}</div>
+          <div style={{marginTop:16,height:6,background:"#e5e7eb",borderRadius:3,overflow:"hidden"}}>
+            <div style={{height:"100%",background:"#1b5e20",borderRadius:3,width:"100%",animation:"progress 2s ease-in-out infinite"}}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESTORED success ── */}
+      {step === "restored" && (
+        <div style={{textAlign:"center",padding:"1.5rem 0"}}>
+          <div style={{fontSize:"3rem"}}>✅</div>
+          <div style={{marginTop:12,fontWeight:700,fontSize:"1rem",color:"#166534"}}>
+            {isEn?"Data Restored Successfully!":"डाटा सफलतापूर्वक रिस्टोर भयो!"}
+          </div>
+          <div style={{marginTop:8,fontSize:"0.78rem",color:"#374151"}}>
+            {restoreMode==="overwrite"
+              ? (isEn?"All data has been replaced with the backup.":"सम्पूर्ण डाटा ब्याकअपले बदलिएको छ।")
+              : (isEn?"New records from the backup have been merged in.":"ब्याकअपका नयाँ रेकर्डहरू मर्ज गरिएको छ।")}
+          </div>
+          <div style={{marginTop:16,background:"#f0fdf4",borderRadius:"0.5rem",padding:"0.65rem",fontSize:"0.75rem",color:"#166534"}}>
+            {isEn?"The app will reload to reflect the restored data.":"एप पुनः लोड भएर रिस्टोर गरिएको डाटा देखाउनेछ।"}
+          </div>
+          <button type="button" onClick={()=>setTimeout(()=>window.location.reload(),200)}
+            style={{marginTop:16,padding:"0.65rem 2rem",background:"#1b5e20",color:"#fff",border:"none",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:"0.88rem"}}>
+            {isEn?"🔄 Reload App":"🔄 एप पुनः लोड गर्नुहोस्"}
+          </button>
+        </div>
+      )}
+
+      {/* ── ERROR state ── */}
+      {step === "error" && (
+        <div style={{textAlign:"center",padding:"1.5rem 0"}}>
+          <div style={{fontSize:"2.5rem"}}>❌</div>
+          <div style={{marginTop:12,fontWeight:700,fontSize:"0.95rem",color:"#991b1b"}}>
+            {isEn?"Something went wrong":"केही गल्ती भयो"}
+          </div>
+          <div style={{marginTop:8,fontSize:"0.78rem",color:"#374151",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"0.5rem",padding:"0.6rem"}}>{errorMsg}</div>
+          <button type="button" onClick={resetToIdle}
+            style={{marginTop:16,padding:"0.6rem 2rem",background:"#1b5e20",color:"#fff",border:"none",borderRadius:"0.5rem",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
+            {isEn?"Try Again":"फेरि प्रयास गर्नुहोस्"}
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes progress { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+      `}</style>
+    </Modal>
+  );
 }
 
 // ── Schema migration ───────────────────────────────────────────────────────────
@@ -1588,6 +1914,7 @@ export default function App(){
   const [showCatMgr,setShowCatMgr]=useState(false);
   const [showUserMgr,setShowUserMgr]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
+  const [showBackup,setShowBackup]=useState(false);
   const [useBS,setUseBS]=useState(true);
 
   const [members,setMembers]=useFirebaseStore("fys_data/members",STORAGE_KEYS.members,SEED_MEMBERS);
@@ -1921,6 +2248,20 @@ export default function App(){
                   </button>
                 )}
 
+                {/* Data Backup & Recovery */}
+                <button type="button"
+                  onClick={()=>{setShowBackup(true);setShowSettings(false);}}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                >
+                  <span style={{width:32,height:32,borderRadius:"50%",background:"#f0f9ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="download" size={15} color="#0284c7"/>
+                  </span>
+                  <div>
+                    <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{lang==="np"?"डाटा ब्याकअप / रिकभरी":"Data Backup & Recovery"}</div>
+                    <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{lang==="np"?"ब्याकअप डाउनलोड वा रिस्टोर गर्नुहोस्":"Export or restore all app data"}</div>
+                  </div>
+                </button>
+
                 {/* Logout */}
                 <button type="button"
                   onClick={()=>{setShowSettings(false);logout();}}
@@ -2025,6 +2366,7 @@ export default function App(){
       {showProfile&&<ProfileModal user={currentUser} users={users} setUsers={setUsers} onClose={()=>setShowProfile(false)} t={t} lang={lang}/>}
       {showUserMgr&&isAdmin&&<UserManagementModal users={users} setUsers={setUsers} currentUser={currentUser} onClose={()=>setShowUserMgr(false)} t={t} lang={lang}/>}
       {showCatMgr&&isAdmin&&<CategoryManager categories={categories} setCategories={setCategories} onClose={()=>setShowCatMgr(false)} t={t} cash={cash} bank={bank} ie={ie} savings={savings} loans={loans}/>}
+      {showBackup&&<BackupModal lang={lang} users={users} members={members} savings={savings} loans={loans} loanPayments={loanPayments} cash={cash} bank={bank} ie={ie} categories={categories} onClose={()=>setShowBackup(false)}/>}
     </div>
   );
 }

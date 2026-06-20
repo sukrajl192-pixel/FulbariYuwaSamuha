@@ -373,37 +373,10 @@ function useSyncStatus() {
   return status;
 }
 
-// SyncIndicator — compact pill badge wired to the global sync status
+// SyncIndicator — sync runs silently in background; no UI shown to users
 function SyncIndicator() {
-  const status = useSyncStatus();
-  useEffect(() => {
-    if (document.getElementById("fys-spin-css")) return;
-    const s = document.createElement("style");
-    s.id = "fys-spin-css";
-    s.textContent = "@keyframes fys-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}";
-    document.head.appendChild(s);
-  }, []);
-  const cfg = {
-    synced:  { label:"Synced ✔",   color:"#166534", bg:"rgba(187,247,208,0.92)", border:"#86efac" },
-    saving:  { label:"Saving...",  color:"#92400e", bg:"rgba(253,230,138,0.92)", border:"#fcd34d" },
-    offline: { label:"Offline ⚡",  color:"#991b1b", bg:"rgba(254,202,202,0.92)", border:"#fca5a5" },
-    error:   { label:"Sync Error", color:"#991b1b", bg:"rgba(254,202,202,0.92)", border:"#fca5a5" },
-  }[status] || { label:"Synced ✔", color:"#166534", bg:"rgba(187,247,208,0.92)", border:"#86efac" };
-  return (
-    <div style={{
-      display:"inline-flex",alignItems:"center",gap:4,
-      padding:"3px 9px",borderRadius:"1rem",
-      background:cfg.bg,border:`1px solid ${cfg.border}`,
-      fontSize:"0.65rem",color:cfg.color,fontWeight:700,
-      fontFamily:"'Poppins',sans-serif",letterSpacing:"0.01em",flexShrink:0,
-      transition:"background 0.3s,border 0.3s,color 0.3s",
-    }}>
-      {status==="saving"&&(
-        <span style={{display:"inline-block",animation:"fys-spin 0.8s linear infinite",lineHeight:1,fontSize:"0.85rem"}}>↻</span>
-      )}
-      {cfg.label}
-    </div>
-  );
+  useSyncStatus(); // keep the hook active so status tracking continues
+  return null;
 }
 
 

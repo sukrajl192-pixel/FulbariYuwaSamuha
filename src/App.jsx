@@ -1587,6 +1587,7 @@ export default function App(){
   const [showProfile,setShowProfile]=useState(false);
   const [showCatMgr,setShowCatMgr]=useState(false);
   const [showUserMgr,setShowUserMgr]=useState(false);
+  const [showSettings,setShowSettings]=useState(false);
   const [useBS,setUseBS]=useState(true);
 
   const [members,setMembers]=useFirebaseStore("fys_data/members",STORAGE_KEYS.members,SEED_MEMBERS);
@@ -1790,73 +1791,25 @@ export default function App(){
           </div>
         </div>
 
-        {/* ── Right action buttons — icon-only, compact, single row ── */}
-        <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+        {/* ── Right side: sync + settings gear + logout only ── */}
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,position:"relative"}}>
 
-          {/* Sync status indicator */}
           <SyncIndicator/>
 
-          {/* Language: globe icon + short label (EN / NP) */}
+          {/* ⚙️ Settings button */}
           <button type="button"
-            onClick={()=>setLang(lang==="np"?"en":"np")}
-            title={lang==="np"?"Switch to English":"नेपालीमा जानुस्"}
-            style={{
-              ...hBtn(),
-              width:"auto",padding:"0 7px",gap:3,
-              fontSize:"0.62rem",fontWeight:700,
-              fontFamily:"'Poppins',sans-serif",color:"#fff",
-            }}
+            onClick={()=>setShowSettings(s=>!s)}
+            title={lang==="np"?"सेटिङ्स":"Settings"}
+            style={hBtn({background:showSettings?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.13)"})}
           >
-            <Icon name="globe" size={13} color="#fff"/>
-            <span>{lang==="np"?"EN":"NP"}</span>
+            {/* Gear SVG */}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
           </button>
 
-          {/* BS / AD calendar toggle */}
-          <button type="button"
-            onClick={()=>setUseBS(b=>!b)}
-            title={useBS?(lang==="np"?"ई.सं. देखाउनुस्":"Show AD"):(lang==="np"?"वि.सं. देखाउनुस्":"Show BS")}
-            style={{
-              ...hBtn(),
-              width:"auto",padding:"0 6px",gap:3,
-              fontSize:"0.6rem",fontFamily:"'Poppins',sans-serif",color:"#fff",
-            }}
-          >
-            <Icon name="calendar" size={13} color="#fff"/>
-            <span>{useBS?t.bsLabel:t.adLabel}</span>
-          </button>
-
-          {/* Category manager — admin only, icon-only */}
-          {isAdmin&&(
-            <button type="button"
-              onClick={()=>setShowCatMgr(true)}
-              title={t.category||"Categories"}
-              style={hBtn()}
-            >
-              <Icon name="tag" size={14} color="#fff"/>
-            </button>
-          )}
-
-          {/* User Management — admin only */}
-          {isAdmin&&(
-            <button type="button"
-              onClick={()=>setShowUserMgr(true)}
-              title={lang==="np"?"प्रयोगकर्ता व्यवस्थापन":"User Management"}
-              style={hBtn()}
-            >
-              <Icon name="lock" size={14} color="#fff"/>
-            </button>
-          )}
-
-          {/* Profile — icon only; auth fully intact, name just not shown */}
-          <button type="button"
-            onClick={()=>setShowProfile(true)}
-            title={currentUser.displayName}
-            style={hBtn()}
-          >
-            <Icon name="user" size={14} color="#fff"/>
-          </button>
-
-          {/* Logout — red to distinguish as destructive */}
+          {/* Logout — always visible, red */}
           <button type="button"
             onClick={logout}
             title={t.logout}
@@ -1864,6 +1817,127 @@ export default function App(){
           >
             <Icon name="close" size={13} color="#fff"/>
           </button>
+
+          {/* Settings dropdown panel */}
+          {showSettings&&(
+            <>
+              {/* Invisible backdrop — closes on outside click */}
+              <div
+                onClick={()=>setShowSettings(false)}
+                style={{position:"fixed",inset:0,zIndex:299}}
+              />
+              {/* Panel */}
+              <div style={{
+                position:"fixed",
+                top:58,
+                right:10,
+                zIndex:300,
+                background:"#fff",
+                borderRadius:"0.875rem",
+                boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
+                minWidth:240,
+                overflow:"hidden",
+                border:"1px solid #e5e7eb",
+              }}>
+                {/* Panel header */}
+                <div style={{background:"linear-gradient(135deg,#1b5e20,#2e7d32)",padding:"0.7rem 1rem",color:"#fff"}}>
+                  <div style={{fontWeight:700,fontSize:"0.88rem"}}>{lang==="np"?"⚙️ सेटिङ्स":"⚙️ Settings"}</div>
+                  <div style={{fontSize:"0.68rem",opacity:0.8,marginTop:1}}>{currentUser?.displayName||currentUser?.username||""}</div>
+                </div>
+
+                {/* Language toggle */}
+                <button type="button"
+                  onClick={()=>{setLang(lang==="np"?"en":"np");}}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                >
+                  <span style={{width:32,height:32,borderRadius:"50%",background:"#f0fdf4",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="globe" size={15} color="#1b5e20"/>
+                  </span>
+                  <div>
+                    <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{lang==="np"?"Switch to English":"नेपालीमा जानुस्"}</div>
+                    <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{lang==="np"?"English":"नेपाली"} → {lang==="np"?"English":"नेपाली"}</div>
+                  </div>
+                  <span style={{marginLeft:"auto",fontSize:"0.7rem",fontWeight:700,padding:"0.2rem 0.5rem",borderRadius:"0.3rem",background:"#f0fdf4",color:"#1b5e20"}}>{lang==="np"?"EN":"NP"}</span>
+                </button>
+
+                {/* BS/AD toggle */}
+                <button type="button"
+                  onClick={()=>setUseBS(b=>!b)}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                >
+                  <span style={{width:32,height:32,borderRadius:"50%",background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="calendar" size={15} color="#2563eb"/>
+                  </span>
+                  <div>
+                    <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{lang==="np"?"मिति प्रणाली":"Calendar System"}</div>
+                    <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{lang==="np"?"वि.सं. / ई.सं. बदल्नुस्":"Toggle BS / AD"}</div>
+                  </div>
+                  <span style={{marginLeft:"auto",fontSize:"0.7rem",fontWeight:700,padding:"0.2rem 0.5rem",borderRadius:"0.3rem",background:"#eff6ff",color:"#2563eb"}}>{useBS?t.bsLabel:t.adLabel}</span>
+                </button>
+
+                {/* Profile */}
+                <button type="button"
+                  onClick={()=>{setShowProfile(true);setShowSettings(false);}}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                >
+                  <span style={{width:32,height:32,borderRadius:"50%",background:"#fdf4ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="user" size={15} color="#7c3aed"/>
+                  </span>
+                  <div>
+                    <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{lang==="np"?"प्रोफाइल":"Profile"}</div>
+                    <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{currentUser?.displayName||currentUser?.username||""}</div>
+                  </div>
+                </button>
+
+                {/* Categories — admin only */}
+                {isAdmin&&(
+                  <button type="button"
+                    onClick={()=>{setShowCatMgr(true);setShowSettings(false);}}
+                    style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                  >
+                    <span style={{width:32,height:32,borderRadius:"50%",background:"#fff7ed",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <Icon name="tag" size={15} color="#ea580c"/>
+                    </span>
+                    <div>
+                      <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{t.category||"Categories"}</div>
+                      <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{lang==="np"?"आय/व्यय श्रेणी":"Manage income & expense categories"}</div>
+                    </div>
+                  </button>
+                )}
+
+                {/* User Management — admin only */}
+                {isAdmin&&(
+                  <button type="button"
+                    onClick={()=>{setShowUserMgr(true);setShowSettings(false);}}
+                    style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff",cursor:"pointer",borderBottom:"1px solid #f3f4f6",fontFamily:"inherit",textAlign:"left"}}
+                  >
+                    <span style={{width:32,height:32,borderRadius:"50%",background:"#fef2f2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <Icon name="lock" size={15} color="#dc2626"/>
+                    </span>
+                    <div>
+                      <div style={{fontSize:"0.83rem",fontWeight:600,color:"#111827"}}>{lang==="np"?"प्रयोगकर्ता व्यवस्थापन":"User Management"}</div>
+                      <div style={{fontSize:"0.68rem",color:"#6b7280"}}>{lang==="np"?"प्रयोगकर्ता थप्नुस्/हटाउनुस्":"Add or remove users"}</div>
+                    </div>
+                  </button>
+                )}
+
+                {/* Logout */}
+                <button type="button"
+                  onClick={()=>{setShowSettings(false);logout();}}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:"0.75rem",padding:"0.75rem 1rem",border:"none",background:"#fff5f5",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}
+                >
+                  <span style={{width:32,height:32,borderRadius:"50%",background:"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="close" size={14} color="#dc2626"/>
+                  </span>
+                  <div>
+                    <div style={{fontSize:"0.83rem",fontWeight:700,color:"#dc2626"}}>{t.logout}</div>
+                    <div style={{fontSize:"0.68rem",color:"#9ca3af"}}>{currentUser?.username||""}</div>
+                  </div>
+                </button>
+
+              </div>
+            </>
+          )}
 
         </div>
       </header>

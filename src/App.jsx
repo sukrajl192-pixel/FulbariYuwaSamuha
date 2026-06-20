@@ -3345,10 +3345,14 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,totalFund,members,sav
   const bankInterestAmt=bank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
   const netGroupFund=cashBal+bankBal;
 
-  // Category breakdown — ALL TIME, no period filter
+  // Category breakdown — dynamically detect ALL categories from actual ie records
+  // (never hardcode or rely on categories prop so future custom categories auto-appear)
   const getLabel=k=>getCatLabel(k)||catLabel(k,t);
-  const allCatKeys=[...(categories.income||[]),...(categories.expense||[])];
-  const catBreakdown=allCatKeys.map(k=>{
+  const allCatKeys=[...new Set(ie.map(r=>r.category).filter(Boolean))];
+  // Also include any configured-but-unused categories so layout is consistent
+  const configuredKeys=[...(categories.income||[]),...(categories.expense||[])];
+  const mergedKeys=[...new Set([...allCatKeys,...configuredKeys])];
+  const catBreakdown=mergedKeys.map(k=>{
     const inc=ie.filter(r=>r.category===k).reduce((s,r)=>s+(r.income||0),0);
     const exp=ie.filter(r=>r.category===k).reduce((s,r)=>s+(r.expense||0),0);
     return{key:k,label:getLabel(k),inc,exp,net:inc-exp};

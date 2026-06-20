@@ -1,0 +1,83 @@
+Fix the Report section income aggregation and display logic.
+
+IMPORTANT RULES:
+
+* Do NOT change UI design, layout, PDF structure, or dashboard
+* Do NOT modify Firebase database structure
+* Do NOT change transaction entry forms
+* Only fix Report section income collection and display logic
+
+CURRENT ISSUE:
+
+* Some income categories are not appearing in Reports.
+* Categories such as Early Withdrawal Fee are missing even though transactions exist.
+* Report totals are incomplete.
+
+WHAT I WANT:
+
+1. INCLUDE ALL INCOME CATEGORIES
+
+The Report section must automatically include ALL income transactions recorded in the system regardless of category.
+
+Examples include:
+
+* Loan Interest
+* Bank Interest
+* Deposit Late Fee
+* Early Withdrawal Fee
+* Membership Fee
+* Registration Fee
+* Donation Income
+* Other Income
+* Any future custom income categories
+
+2. DYNAMIC CATEGORY DETECTION
+
+* Do NOT hardcode income categories.
+* Automatically detect and include every category stored as Income.
+* If a new income category is added in the future, it should automatically appear in Reports without code changes.
+
+3. REPORT DISPLAY
+
+Income Breakdown should show each income category separately with its amount.
+
+Example:
+
+Income Breakdown:
+
+* Loan Interest ........ NPR X
+* Bank Interest ........ NPR X
+* Deposit Late Fee ..... NPR X
+* Early Withdrawal Fee . NPR X
+* Other Income ......... NPR X
+
+Total Income ........... NPR X
+
+4. TOTAL INCOME CALCULATION
+
+Total Income must equal:
+
+Sum of ALL income categories shown in the report.
+
+Nothing should be excluded.
+
+5. MONTHLY REPORT & PDF
+
+* Display all income categories in Monthly Report.
+* Display all income categories in PDF export.
+* Ensure displayed categories and totals match exactly.
+
+6. SAFETY
+
+* Do not change loan calculations.
+* Do not change savings calculations.
+* Do not change expense calculations.
+* Do not modify dashboard cards.
+* Only fix report income aggregation and display.
+
+OUTPUT:
+
+* Every income category appears in Reports.
+* Early Withdrawal Fee, Deposit Late Fee, Bank Interest, Loan Interest and all future income categories are included.
+* Total Income is calculated from all income sources.
+* Monthly Report and PDF show complete and accurate income breakdown.

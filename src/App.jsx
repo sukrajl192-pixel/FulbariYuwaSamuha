@@ -3315,11 +3315,14 @@ function IncomeExpense({ie,setIE,filterStart,setFilterStart,filterEnd,setFilterE
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 17: REPORTS DASHBOARD — Income/Expense + Asset/Liability + Monthly
 // ═══════════════════════════════════════════════════════════════════════════════
-function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthlyExpense,totalFund,members,savings,loans,loanPayments,cash,bank,ie,filterStart,filterEnd,lang,t,useBS,fmtFn,isAdmin,categories}){
-  const [subTab,setSubTab]=useState("ie");
-  const [mode,setMode]=useState("monthly");
+// =============================================================================
+// SECTION: TREASURER-STYLE MONTHLY FINANCIAL REPORT
+// All totals are CUMULATIVE (all-time). Month/year selector = title only.
+// =============================================================================
+function Reports({totalSaving,totalLoanOut,cashBal,bankBal,totalFund,members,savings,loans,loanPayments,cash,bank,ie,lang,t,useBS,fmtFn,isAdmin,categories}){
+  const [subTab,setSubTab]=useState("monthly");
 
-  // BS date selectors
+  // Month/year for TITLE ONLY — does NOT filter any calculations
   const currentBsYear=adToBS(today()).y||2081;
   const bsYearStart=2079;
   const bsYearEnd=Math.max(currentBsYear+2,2090);
@@ -3328,99 +3331,95 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
   const [selM,setSelM]=useState(adToBS(today()).m||1);
   const bsMOpts=(lang==="en"?BS_MONTHS_EN:BS_MONTHS_NP).map((m,i)=>({value:i+1,label:m}));
 
-  const filterBS=rows=>rows.filter(e=>{
-    const bs=adToBS(e.date);
-    return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);
-  });
+  // ALL CUMULATIVE — no period filtering anywhere
+  const allInc=ie.reduce((a,x)=>a+(x.income||0),0);
+  const allExp=ie.reduce((a,x)=>a+(x.expense||0),0);
+  const profitLoss=allInc-allExp;
 
-  // ── Income/Expense ─────────────────────────────────────────────────────────
-  // Shared date range (from IncomeExpense module) overrides BS period filter when active
-  const fIE=(filterStart||filterEnd)
-    ? ie.filter(x=>(filterStart?x.date>=filterStart:true)&&(filterEnd?x.date<=filterEnd:true))
-    : filterBS(ie);
-  const totalInc=fIE.reduce((a,x)=>a+(x.income||0),0);
-  const totalExp=fIE.reduce((a,x)=>a+(x.expense||0),0);
-  const profitLoss=totalInc-totalExp;
+  const rLoanIssued=loans.reduce((a,l)=>a+(l.loanAmount||l.principal||0),0);
+  const rPrincipal=(loanPayments||[]).reduce((a,p)=>a+(p.principalPaid||0),0)||
+                    loans.reduce((a,l)=>a+(l.principalPaid||0),0);
+  const rInterest=(loanPayments||[]).reduce((a,p)=>a+(p.interestPaid||0),0)||
+                   loans.reduce((a,l)=>a+(l.interestPaid||0),0);
+  const allSaving=savings.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
+  const bankInterestAmt=bank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
+  const netGroupFund=cashBal+bankBal;
 
-  // Category breakdown (filtered period)
+  // Category breakdown — ALL TIME, no period filter
   const getLabel=k=>getCatLabel(k)||catLabel(k,t);
   const allCatKeys=[...(categories.income||[]),...(categories.expense||[])];
   const catBreakdown=allCatKeys.map(k=>{
-    const inc=fIE.filter(r=>r.category===k).reduce((s,r)=>s+(r.income||0),0);
-    const exp=fIE.filter(r=>r.category===k).reduce((s,r)=>s+(r.expense||0),0);
+    const inc=ie.filter(r=>r.category===k).reduce((s,r)=>s+(r.income||0),0);
+    const exp=ie.filter(r=>r.category===k).reduce((s,r)=>s+(r.expense||0),0);
     return{key:k,label:getLabel(k),inc,exp,net:inc-exp};
   }).filter(c=>c.inc>0||c.exp>0);
 
-  // ── Asset/Liability (balance sheet — all-time snapshot) ─────────────────────
-  const cashAsset=cashBal;
-  const bankAsset=bankBal;
-  const loansAsset=totalLoanOut;
-  const totalAssets=cashAsset+bankAsset+loansAsset;
+  // Asset / Liability — balance sheet snapshot (always all-time)
+  const totalAssets=cashBal+bankBal+totalLoanOut;
   const membersShare=totalSaving;
-  const cumulativeProfit=ie.reduce((a,x)=>a+(x.income||0)-(x.expense||0),0);
-  const totalLiabilities=membersShare+cumulativeProfit;
+  const totalLiabilities=membersShare+profitLoss;
   const balanceDiff=totalAssets-totalLiabilities;
 
-  // ── Monthly summary ─────────────────────────────────────────────────────────
-  const fS=filterBS(savings);
-  const fL=loans.filter(l=>{const bs=adToBS(l.startDate||l.date||"");return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);});
-  const rSaving=fS.reduce((a,s)=>a+(s.deposit||0)-(s.withdraw||0),0);
-  const rLoanIssued=fL.reduce((a,l)=>a+(l.principal||0),0);
-  const fLP=(loanPayments||[]).filter(p=>{const bs=adToBS(p.date);return mode==="monthly"?(bs.y===selY&&bs.m===selM):(bs.y===selY);});
-  const rPrincipal=fLP.reduce((a,p)=>a+(p.principalPaid||0),0);
-  const rInterest=fLP.reduce((a,p)=>a+(p.interestPaid||0),0);
-  const fBank=filterBS(bank);
-  const bankInterestAmt=fBank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
-  const reportNetBalance=rSaving-rLoanIssued+rPrincipal+totalInc+bankInterestAmt-totalExp;
-  const netGroupFund=cashBal+bankBal;
+  // Period string — used in headings ONLY, no data filtering
   const mLabel=lang==="en"?BS_MONTHS_EN[selM-1]:BS_MONTHS_NP[selM-1];
-  const period=mode==="monthly"?`${mLabel} ${selY} ${t.bsLabel}`:`${selY} ${t.bsLabel}`;
-  const sigNames=lang==="np"?["अध्यक्ष","सचिव","कोषाध्यक्ष"]:["President","Secretary","Treasurer"];
+  const period=`${mLabel} ${selY} ${t.bsLabel}`;
+  const reportTitle=`${t.monthlyReport} \u2014 ${period}`;
 
-  // Print HTML
+  const sigNames=lang==="np"
+    ?["\u0905\u0927\u094d\u092f\u0915\u094d\u0937","\u0938\u091a\u093f\u0935","\u0915\u094b\u0937\u093e\u0927\u094d\u092f\u0915\u094d\u0937"]
+    :["President","Secretary","Treasurer"];
+
+  // Print HTML (cumulative format)
+  const incRows=catBreakdown.filter(c=>c.inc>0).map(c=>`<tr><td style="padding-left:1.5em">${c.label}</td><td style="text-align:right">${fmtFn(c.inc)}</td></tr>`).join("");
+  const expRows=catBreakdown.filter(c=>c.exp>0).map(c=>`<tr><td style="padding-left:1.5em">${c.label}</td><td style="text-align:right">${fmtFn(c.exp)}</td></tr>`).join("");
   const printHTML=`
-    <h2>${mode==="monthly"?t.monthlyReport:t.yearlyReport} — ${period}</h2>
-    <table><thead><tr><th>${lang==="np"?"विवरण":"Description"}</th><th style="text-align:right">${lang==="np"?"रकम":"Amount"}</th></tr></thead>
-    <tbody>
-      <tr><td>${t.totalSaving}</td><td style="text-align:right">${fmtFn(rSaving)}</td></tr>
-      <tr><td>${lang==="np"?"ऋण जारी":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
-      <tr><td>${lang==="np"?"साँवा उठान":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
-      <tr><td>${t.incomeLabel}</td><td style="text-align:right">${fmtFn(totalInc)}</td></tr>
-      <tr><td>${lang==="np"?"बैंक ब्याज":"Bank Interest"}</td><td style="text-align:right">${fmtFn(bankInterestAmt)}</td></tr>
-      <tr><td>${t.expenseLabel}</td><td style="text-align:right">${fmtFn(totalExp)}</td></tr>
-      <tr class="total-row"><td>${t.netBalance}</td><td style="text-align:right">${fmtFn(reportNetBalance)}</td></tr>
+    <h2>${reportTitle}</h2>
+    <p style="font-size:0.85em;color:#555;margin-top:-0.5em">${lang==="np"?"(\u0938\u0902\u0938\u094d\u0925\u093e\u092a\u0928\u093e\u0915\u093e\u0932\u0926\u0947\u0916\u093f \u0939\u093e\u0932\u0938\u092e\u094d\u092e\u0915\u094b \u0938\u0902\u091a\u093f\u0924 \u0915\u0941\u0932)":"(Cumulative totals from establishment to date)"}</p>
+    <table><thead><tr><th>${lang==="np"?"\u0935\u093f\u0935\u0930\u0923":"Particulars"}</th><th style="text-align:right">${lang==="np"?"\u0930\u0915\u092e (\u0930\u0942)":"Amount (Rs.)"}</th></tr></thead><tbody>
+      <tr><th colspan="2" style="text-align:left;background:#e8f5e9">${lang==="np"?"\u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Income"}</th></tr>
+      ${incRows}
+      <tr class="total-row"><td>${lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Total Income"}</td><td style="text-align:right">${fmtFn(allInc)}</td></tr>
+      <tr><th colspan="2" style="text-align:left;background:#fce4ec">${lang==="np"?"\u0916\u0930\u094d\u091a":"Expense"}</th></tr>
+      ${expRows}
+      <tr class="total-row"><td>${lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0916\u0930\u094d\u091a":"Total Expense"}</td><td style="text-align:right">${fmtFn(allExp)}</td></tr>
+      <tr class="total-row"><td>${lang==="np"?"\u0928\u093e\u092b\u093e / \u0918\u093e\u091f\u093e":"Profit / Loss"}</td><td style="text-align:right">${fmtFn(profitLoss)}</td></tr>
+      <tr><th colspan="2" style="text-align:left;background:#e3f2fd">${lang==="np"?"\u0906\u0930\u094d\u0925\u093f\u0915 \u0938\u094d\u0925\u093f\u0924\u093f":"Financial Position"}</th></tr>
+      <tr><td>${lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u092c\u091a\u0924 (\u0938\u0926\u0938\u094d\u092f)":"Total Savings (Members)"}</td><td style="text-align:right">${fmtFn(allSaving)}</td></tr>
+      <tr><td>${lang==="np"?"\u0943\u0923 \u091c\u093e\u0930\u0940":"Loan Issued"}</td><td style="text-align:right">${fmtFn(rLoanIssued)}</td></tr>
+      <tr><td>${lang==="np"?"\u0938\u093e\u0901\u0935\u093e \u0909\u0920\u093e\u0928":"Principal Recovered"}</td><td style="text-align:right">${fmtFn(rPrincipal)}</td></tr>
+      <tr><td>${lang==="np"?"\u092c\u094d\u092f\u093e\u091c \u0909\u0920\u093e\u0928":"Interest Recovered"}</td><td style="text-align:right">${fmtFn(rInterest)}</td></tr>
       <tr><td>${t.cashBalance}</td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
       <tr><td>${t.bankBalance}</td><td style="text-align:right">${fmtFn(bankBal)}</td></tr>
-      <tr class="total-row"><td>${lang==="np"?"नेट समूह कोष":"Net Group Fund"}</td><td style="text-align:right">${fmtFn(netGroupFund)}</td></tr>
+      <tr class="total-row"><td>${lang==="np"?"\u0928\u0947\u091f \u0938\u092e\u0942\u0939 \u0915\u094b\u0937":"Net Group Fund"}</td><td style="text-align:right">${fmtFn(netGroupFund)}</td></tr>
       <tr><td>${t.totalMembers}</td><td style="text-align:right">${members.length}</td></tr>
     </tbody></table>
     <div class="sig-area">${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}</div>`;
 
-  // Shared selector style
   const selSt={padding:"0.4rem 0.65rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.82rem",background:"#fff",outline:"none"};
 
   const subTabs=[
-    {id:"ie",      label:lang==="np"?"आय-व्यय":"Income/Exp",   icon:"income",  color:"#7c3aed"},
-    {id:"balance", label:lang==="np"?"सम्पत्ति":"Assets",        icon:"bank",    color:"#2563eb"},
-    {id:"monthly", label:lang==="np"?"मासिक":"Monthly",         icon:"report",  color:"#1b5e20"},
+    {id:"monthly",label:lang==="np"?"\u092e\u093e\u0938\u093f\u0915 \u092a\u094d\u0930\u0924\u093f\u0935\u0947\u0926\u0928":"Monthly Report",icon:"report", color:"#1b5e20"},
+    {id:"ie",     label:lang==="np"?"\u0906\u092f-\u0935\u094d\u092f\u092f":"Income/Exp",       icon:"income", color:"#7c3aed"},
+    {id:"balance",label:lang==="np"?"\u0938\u092e\u094d\u092a\u0924\u094d\u0924\u093f":"Assets",        icon:"bank",   color:"#2563eb"},
   ];
+
+  // Reusable row renderer
+  const Row=({l,v,bold,hi,indent})=>(
+    <div style={{display:"flex",justifyContent:"space-between",padding:indent?"0.55rem 1rem 0.55rem 1.5rem":"0.6rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem",background:hi||"transparent"}}>
+      <span style={{color:hi?"#fff":"#374151",fontWeight:bold?700:500}}>{l}</span>
+      <span style={{fontWeight:bold?700:600,color:hi?"#fff":"#111827"}}>{v}</span>
+    </div>
+  );
 
   return(
     <div>
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}}>
-        <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>📄 {t.report}</h2>
-        {subTab==="monthly"&&<Btn onClick={()=>exportPrint(mode==="monthly"?t.monthlyReport:t.yearlyReport,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>}
+        <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>\ud83d\udcc4 {t.report}</h2>
+        {subTab==="monthly"&&(
+          <Btn onClick={()=>exportPrint(reportTitle,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>
+        )}
       </div>
-
-      {/* Date range active indicator */}
-      {(filterStart||filterEnd)&&(
-        <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"0.5rem",padding:"0.4rem 0.75rem",marginBottom:"0.6rem",display:"flex",alignItems:"center",gap:"0.5rem",flexWrap:"wrap"}}>
-          <span style={{fontSize:"0.72rem",color:"#1e40af",fontWeight:700}}>🔍 {lang==="np"?"मिति दायरा सक्रिय:":"Date Range Active:"}</span>
-          <span style={{fontSize:"0.72rem",color:"#1e40af"}}>{filterStart||"…"} → {filterEnd||"…"}</span>
-          <span style={{fontSize:"0.7rem",color:"#6b7280",fontStyle:"italic"}}>{lang==="np"?"आय/व्यय तथ्यांक फिल्टर गरिएको":"Income/Expense data filtered"}</span>
-        </div>
-      )}
 
       {/* Sub-tabs */}
       <div style={{display:"flex",gap:"0.35rem",marginBottom:"0.85rem",background:"#f0fdf4",borderRadius:"0.75rem",padding:"0.35rem"}}>
@@ -3441,37 +3440,138 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
         ))}
       </div>
 
-      {/* Period selector (shared) */}
-      {subTab!=="balance"&&(
-        <div style={{display:"flex",gap:"0.4rem",flexWrap:"wrap",marginBottom:"0.85rem",alignItems:"center"}}>
-          <div style={{display:"flex",gap:"0.2rem",background:"#f3f4f6",borderRadius:"0.5rem",padding:"0.2rem"}}>
-            {["monthly","yearly"].map(m=>(
-              <button key={m} type="button" onClick={()=>setMode(m)} style={{padding:"0.3rem 0.7rem",border:"none",borderRadius:"0.375rem",background:mode===m?"#fff":"transparent",color:mode===m?"#1b5e20":"#6b7280",cursor:"pointer",fontFamily:"inherit",fontWeight:mode===m?700:500,fontSize:"0.78rem",boxShadow:mode===m?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>
-                {m==="monthly"?t.monthlyReport:t.yearlyReport}
-              </button>
+      {/* Month/year selector — TITLE ONLY banner */}
+      <div style={{background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:"0.6rem",padding:"0.5rem 0.75rem",marginBottom:"0.75rem",display:"flex",gap:"0.5rem",alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:"0.72rem",color:"#92400e",fontWeight:700,whiteSpace:"nowrap"}}>\ud83d\udcc5 {lang==="np"?"\u092a\u094d\u0930\u0924\u093f\u0935\u0947\u0926\u0928 \u092e\u0939\u093f\u0928\u093e \u2014 \u0936\u0940\u0930\u094d\u0937\u0915\u0915\u093e \u0932\u093e\u0917\u093f \u092e\u093e\u0924\u094d\u0930":"Report Month \u2014 for title only"}</span>
+        <select value={selY} onChange={e=>setSelY(+e.target.value)} style={selSt}>
+          {bsYears.map(y=><option key={y} value={y}>{y} {t.bsLabel}</option>)}
+        </select>
+        <select value={selM} onChange={e=>setSelM(+e.target.value)} style={selSt}>
+          {bsMOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <span style={{fontSize:"0.72rem",color:"#b45309",fontStyle:"italic",marginLeft:"auto"}}>{period}</span>
+      </div>
+
+      {/* Cumulative notice */}
+      <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:"0.5rem",padding:"0.4rem 0.75rem",marginBottom:"0.85rem",fontSize:"0.72rem",color:"#166534",fontWeight:500}}>
+        \u2139\ufe0f {lang==="np"?"\u0938\u092c\u0948 \u0930\u0915\u092e\u0939\u0930\u0942 \u0938\u0902\u091a\u093f\u0924 \u091c\u092e\u094d\u092e\u093e\u0939\u0930\u0942 \u2014 \u0938\u0902\u0938\u094d\u0925\u093e\u092a\u0928\u093e\u0915\u093e\u0932\u0926\u0947\u0916\u093f \u0939\u093e\u0932\u0938\u092e\u094d\u092e\u0915\u094b \u0938\u092e\u0917\u094d\u0930 \u0915\u0941\u0932 (महिना छनोटले डेटा फिल्टर गर्दैन)":"All figures show cumulative totals from establishment to date. Month selection does not filter data."}
+      </div>
+
+      {/* ══ MONTHLY REPORT TAB ══ */}
+      {subTab==="monthly"&&(
+        <div>
+          {/* Quick cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"0.5rem",marginBottom:"0.85rem"}}>
+            {[
+              {label:lang==="np"?"\u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Total Income",  val:allInc,    color:"#16a34a",bg:"#f0fdf4"},
+              {label:lang==="np"?"\u0916\u0930\u094d\u091a":"Total Expense",   val:allExp,    color:"#dc2626",bg:"#fff7ed"},
+              {label:lang==="np"?"\u0928\u093e\u092b\u093e/\u0918\u093e\u091f\u093e":"Profit/Loss", val:profitLoss,color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2"},
+            ].map((c,i)=>(
+              <div key={i} style={{background:c.bg,borderRadius:"0.65rem",padding:"0.6rem 0.5rem",textAlign:"center"}}>
+                <div style={{fontSize:"0.6rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{c.label}</div>
+                <div style={{fontSize:"0.88rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
+              </div>
             ))}
           </div>
-          <select value={selY} onChange={e=>setSelY(+e.target.value)} style={selSt}>
-            {bsYears.map(y=><option key={y} value={y}>{y} {t.bsLabel}</option>)}
-          </select>
-          {mode==="monthly"&&(
-            <select value={selM} onChange={e=>setSelM(+e.target.value)} style={selSt}>
-              {bsMOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-          <span style={{fontSize:"0.72rem",color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap"}}>{period}</span>
+
+          {/* Treasurer report card */}
+          <div style={{background:"#fff",borderRadius:"1rem",boxShadow:"0 4px 16px rgba(0,0,0,0.08)",overflow:"hidden",marginBottom:"1rem"}}>
+            {/* Report header */}
+            <div style={{background:"linear-gradient(135deg,#1b5e20,#2e7d32)",padding:"1rem 1.25rem",color:"#fff",textAlign:"center"}}>
+              <div style={{fontSize:"1.05rem",fontWeight:700}}>{t.appName}</div>
+              <div style={{fontSize:"0.85rem",fontWeight:700,marginTop:3}}>{t.monthlyReport}</div>
+              <div style={{fontSize:"0.78rem",opacity:0.85,marginTop:1}}>{period}</div>
+            </div>
+            <div style={{background:"#fefce8",padding:"0.35rem 1rem",fontSize:"0.7rem",color:"#854d0e",fontStyle:"italic",textAlign:"center",borderBottom:"1px solid #fef9c3"}}>
+              {lang==="np"?"\u0938\u0902\u0938\u094d\u0925\u093e\u092a\u0928\u093e\u0915\u093e\u0932\u0926\u0947\u0916\u093f \u0939\u093e\u0932\u0938\u092e\u094d\u092e\u0915\u094b \u0938\u0902\u091a\u093f\u0924 \u0915\u0941\u0932 \u0930\u0915\u092e":"Cumulative totals from group establishment to date"}
+            </div>
+
+            {/* Income */}
+            <div style={{padding:"0.45rem 1rem 0.2rem",background:"#f9fafb",borderBottom:"1px solid #f3f4f6"}}>
+              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#16a34a",textTransform:"uppercase",letterSpacing:"0.04em"}}>{lang==="np"?"\u0906\u092e\u094d\u0926\u093e\u0928\u0940 (Income)":"Income"}</div>
+            </div>
+            {catBreakdown.filter(c=>c.inc>0).length===0?(
+              <div style={{padding:"0.5rem 1.5rem",fontSize:"0.82rem",color:"#9ca3af"}}>{t.noData}</div>
+            ):catBreakdown.filter(c=>c.inc>0).map((c,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.5rem 1rem 0.5rem 1.75rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.85rem"}}>
+                <span style={{color:"#374151"}}>{c.label}</span>
+                <span style={{fontWeight:600,color:"#16a34a"}}>{fmtFn(c.inc)}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.6rem 1rem",background:"#f0fdf4",fontWeight:700,fontSize:"0.88rem",borderBottom:"2px solid #e5e7eb"}}>
+              <span style={{color:"#166534"}}>{lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Total Income"}</span>
+              <span style={{color:"#16a34a"}}>{fmtFn(allInc)}</span>
+            </div>
+
+            {/* Expense */}
+            <div style={{padding:"0.45rem 1rem 0.2rem",background:"#f9fafb",borderBottom:"1px solid #f3f4f6"}}>
+              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.04em"}}>{lang==="np"?"\u0916\u0930\u094d\u091a (Expense)":"Expense"}</div>
+            </div>
+            {catBreakdown.filter(c=>c.exp>0).length===0?(
+              <div style={{padding:"0.5rem 1.5rem",fontSize:"0.82rem",color:"#9ca3af"}}>{t.noData}</div>
+            ):catBreakdown.filter(c=>c.exp>0).map((c,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.5rem 1rem 0.5rem 1.75rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.85rem"}}>
+                <span style={{color:"#374151"}}>{c.label}</span>
+                <span style={{fontWeight:600,color:"#dc2626"}}>{fmtFn(c.exp)}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.6rem 1rem",background:"#fff7ed",fontWeight:700,fontSize:"0.88rem",borderBottom:"2px solid #e5e7eb"}}>
+              <span style={{color:"#9a3412"}}>{lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0916\u0930\u094d\u091a":"Total Expense"}</span>
+              <span style={{color:"#dc2626"}}>{fmtFn(allExp)}</span>
+            </div>
+
+            {/* Profit/Loss */}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"0.7rem 1rem",background:profitLoss>=0?"#166534":"#dc2626",color:"#fff",fontWeight:700,fontSize:"0.95rem",borderBottom:"2px solid #e5e7eb"}}>
+              <span>{lang==="np"?"\u0928\u093e\u092b\u093e / \u0918\u093e\u091f\u093e":"Profit / Loss"}</span><span>{fmtFn(profitLoss)}</span>
+            </div>
+
+            {/* Financial Position */}
+            <div style={{padding:"0.45rem 1rem 0.2rem",background:"#f9fafb",borderBottom:"1px solid #f3f4f6"}}>
+              <div style={{fontSize:"0.72rem",fontWeight:700,color:"#2563eb",textTransform:"uppercase",letterSpacing:"0.04em"}}>{lang==="np"?"\u0906\u0930\u094d\u0925\u093f\u0915 \u0938\u094d\u0925\u093f\u0924\u093f (Financial Position)":"Financial Position"}</div>
+            </div>
+            {[
+              [lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u092c\u091a\u0924 (\u0938\u0926\u0938\u094d\u092f)":"Total Savings (Members)",fmtFn(allSaving)],
+              [lang==="np"?"\u0943\u0923 \u091c\u093e\u0930\u0940":"Loan Issued",                                                    fmtFn(rLoanIssued)],
+              [lang==="np"?"\u0938\u093e\u0901\u0935\u093e \u0909\u0920\u093e\u0928":"Principal Recovered",                          fmtFn(rPrincipal)],
+              [lang==="np"?"\u092c\u094d\u092f\u093e\u091c \u0909\u0920\u093e\u0928":"Interest Recovered",                           fmtFn(rInterest)],
+              [t.cashBalance,                                                                                                         fmtFn(cashBal)],
+              [t.bankBalance,                                                                                                         fmtFn(bankBal)],
+              [lang==="np"?"\u0938\u0926\u0938\u094d\u092f \u0938\u0902\u0916\u094d\u092f\u093e":"Total Members",                    members.length],
+            ].map(([l,v],i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.6rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
+                <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
+              </div>
+            ))}
+
+            {/* Net Group Fund */}
+            <div style={{padding:"0.75rem"}}>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"0.75rem 1rem",background:"#1b5e20",color:"#fff",borderRadius:"0.5rem",fontWeight:700,fontSize:"1rem"}}>
+                <span>{lang==="np"?"\u0928\u0947\u091f \u0938\u092e\u0942\u0939 \u0915\u094b\u0937 (Cash + Bank)":"Net Group Fund (Cash + Bank)"}</span>
+                <span>{fmtFn(netGroupFund)}</span>
+              </div>
+            </div>
+
+            {/* Signature area */}
+            <div style={{padding:"0 1rem 1rem"}}>
+              <div style={{fontSize:"0.75rem",color:"#6b7280",marginBottom:"0.75rem",fontWeight:600,borderTop:"1px solid #f3f4f6",paddingTop:"0.75rem"}}>{lang==="np"?"\u0939\u0938\u094d\u0924\u093e\u0915\u094d\u0937\u0930 \u0915\u094d\u0937\u0947\u0924\u094d\u0930":"Signature Area"}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"1rem"}}>
+                {sigNames.map(x=>(
+                  <div key={x} style={{borderTop:"2px solid #d1d5db",paddingTop:"0.5rem",fontSize:"0.78rem",color:"#6b7280",textAlign:"center"}}>{x}</div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ══ INCOME/EXPENSE TAB ══ */}
+      {/* ══ INCOME/EXPENSE TAB (cumulative) ══ */}
       {subTab==="ie"&&(
         <div>
-          {/* 3 summary cards */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.5rem",marginBottom:"0.85rem"}}>
             {[
-              {label:t.incomeLabel,  val:totalInc,   color:"#16a34a",bg:"#f0fdf4",border:"#bbf7d0"},
-              {label:t.expenseLabel, val:totalExp,   color:"#dc2626",bg:"#fff7ed",border:"#fed7aa"},
-              {label:t.netBalance,   val:profitLoss, color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2",border:profitLoss>=0?"#bfdbfe":"#fecaca"},
+              {label:lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Total Income",  val:allInc,    color:"#16a34a",bg:"#f0fdf4",border:"#bbf7d0"},
+              {label:lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0916\u0930\u094d\u091a":"Total Expense",   val:allExp,    color:"#dc2626",bg:"#fff7ed",border:"#fed7aa"},
+              {label:lang==="np"?"\u0928\u093e\u092b\u093e/\u0918\u093e\u091f\u093e":"Net Profit/Loss",    val:profitLoss,color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2",border:profitLoss>=0?"#bfdbfe":"#fecaca"},
             ].map((c,i)=>(
               <div key={i} style={{background:c.bg,borderRadius:"0.75rem",padding:"0.75rem 0.5rem",textAlign:"center",border:`1px solid ${c.border}`}}>
                 <div style={{fontSize:"0.62rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{c.label}</div>
@@ -3480,11 +3580,10 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
             ))}
           </div>
 
-          {/* Category breakdown */}
           <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
             <div style={{background:"linear-gradient(135deg,#5b21b6,#7c3aed)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontWeight:700,fontSize:"0.85rem"}}>{lang==="np"?"📂 श्रेणीगत विवरण":"📂 Category Breakdown"}</div>
-              <div style={{fontSize:"0.72rem",opacity:0.8}}>{period}</div>
+              <div style={{fontWeight:700,fontSize:"0.85rem"}}>{lang==="np"?"\ud83d\udcc2 \u0936\u094d\u0930\u0947\u0923\u0940\u0917\u0924 \u0935\u093f\u0935\u0930\u0923":"\ud83d\udcc2 Category Breakdown"}</div>
+              <div style={{fontSize:"0.7rem",opacity:0.85}}>{lang==="np"?"\u0938\u0902\u091a\u093f\u0924 \u091c\u092e\u094d\u092e\u093e":"Cumulative All-Time"}</div>
             </div>
             {catBreakdown.length===0?(
               <div style={{padding:"1.5rem",textAlign:"center",color:"#9ca3af",fontSize:"0.85rem"}}>{t.noData}</div>
@@ -3493,28 +3592,28 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.82rem"}}>
                   <thead>
                     <tr style={{background:"#f9fafb"}}>
-                      <th style={{padding:"0.5rem 1rem",textAlign:"left",fontWeight:700,color:"#6b7280",fontSize:"0.72rem",whiteSpace:"nowrap"}}>{t.category}</th>
-                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#16a34a",fontSize:"0.72rem"}}>{t.incomeLabel}</th>
-                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#dc2626",fontSize:"0.72rem"}}>{t.expenseLabel}</th>
-                      <th style={{padding:"0.5rem 1rem",textAlign:"right",fontWeight:700,color:"#374151",fontSize:"0.72rem"}}>{t.netBalance}</th>
+                      <th style={{padding:"0.5rem 1rem",textAlign:"left",fontWeight:700,color:"#6b7280",fontSize:"0.72rem"}}>{t.category}</th>
+                      <th style={{padding:"0.5rem 0.75rem",textAlign:"right",fontWeight:700,color:"#16a34a",fontSize:"0.72rem"}}>{lang==="np"?"\u0906\u092e\u094d\u0926\u093e\u0928\u0940":"Income"}</th>
+                      <th style={{padding:"0.5rem 0.75rem",textAlign:"right",fontWeight:700,color:"#dc2626",fontSize:"0.72rem"}}>{lang==="np"?"\u0916\u0930\u094d\u091a":"Expense"}</th>
+                      <th style={{padding:"0.5rem 0.75rem",textAlign:"right",fontWeight:700,color:"#374151",fontSize:"0.72rem"}}>{lang==="np"?"\u0928\u0947\u091f":"Net"}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {catBreakdown.map((c,i)=>(
                       <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}>
                         <td style={{padding:"0.55rem 1rem",color:"#374151",fontWeight:500}}>{c.label}</td>
-                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:"#16a34a",fontWeight:c.inc>0?600:400}}>{c.inc>0?fmtFn(c.inc):"—"}</td>
-                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:"#dc2626",fontWeight:c.exp>0?600:400}}>{c.exp>0?fmtFn(c.exp):"—"}</td>
-                        <td style={{padding:"0.55rem 1rem",textAlign:"right",color:c.net>=0?"#2563eb":"#dc2626",fontWeight:700}}>{fmtFn(c.net)}</td>
+                        <td style={{padding:"0.55rem 0.75rem",textAlign:"right",color:"#16a34a",fontWeight:c.inc>0?600:400}}>{c.inc>0?fmtFn(c.inc):"\u2014"}</td>
+                        <td style={{padding:"0.55rem 0.75rem",textAlign:"right",color:"#dc2626",fontWeight:c.exp>0?600:400}}>{c.exp>0?fmtFn(c.exp):"\u2014"}</td>
+                        <td style={{padding:"0.55rem 0.75rem",textAlign:"right",color:c.net>=0?"#2563eb":"#dc2626",fontWeight:700}}>{fmtFn(c.net)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr style={{background:"#f0fdf4",fontWeight:700}}>
-                      <td style={{padding:"0.6rem 1rem",color:"#111827"}}>{lang==="np"?"जम्मा":"Total"}</td>
-                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:"#16a34a"}}>{fmtFn(totalInc)}</td>
-                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:"#dc2626"}}>{fmtFn(totalExp)}</td>
-                      <td style={{padding:"0.6rem 1rem",textAlign:"right",color:profitLoss>=0?"#2563eb":"#dc2626"}}>{fmtFn(profitLoss)}</td>
+                      <td style={{padding:"0.6rem 1rem",color:"#111827"}}>{lang==="np"?"\u091c\u092e\u094d\u092e\u093e":"Total"}</td>
+                      <td style={{padding:"0.6rem 0.75rem",textAlign:"right",color:"#16a34a"}}>{fmtFn(allInc)}</td>
+                      <td style={{padding:"0.6rem 0.75rem",textAlign:"right",color:"#dc2626"}}>{fmtFn(allExp)}</td>
+                      <td style={{padding:"0.6rem 0.75rem",textAlign:"right",color:profitLoss>=0?"#2563eb":"#dc2626"}}>{fmtFn(profitLoss)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -3527,23 +3626,22 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
       {/* ══ ASSET/LIABILITY TAB ══ */}
       {subTab==="balance"&&(
         <div>
-          {/* Balance indicator */}
           <div style={{background:`linear-gradient(135deg,${Math.abs(balanceDiff)<1?"#166534,#16a34a":balanceDiff>0?"#1e40af,#2563eb":"#991b1b,#dc2626"})`,borderRadius:"0.875rem",padding:"1rem 1.25rem",marginBottom:"0.85rem",color:"#fff",textAlign:"center"}}>
-            <div style={{fontSize:"0.72rem",fontWeight:600,opacity:0.85,marginBottom:3,letterSpacing:"0.04em"}}>{lang==="np"?"सम्पत्ति — दायित्व":"ASSETS — LIABILITIES"}</div>
-            <div style={{fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.01em"}}>{fmtFn(Math.abs(balanceDiff))}</div>
-            <div style={{fontSize:"0.7rem",opacity:0.8,marginTop:3}}>{Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):(balanceDiff>0?(lang==="np"?"▲ अतिरिक्त सम्पत्ति":"▲ Asset surplus"):(lang==="np"?"▼ घाटा":"▼ Deficit"))}</div>
+            <div style={{fontSize:"0.72rem",fontWeight:600,opacity:0.85,marginBottom:3,letterSpacing:"0.04em"}}>{lang==="np"?"\u0938\u092e\u094d\u092a\u0924\u094d\u0924\u093f \u2014 \u0926\u093e\u092f\u093f\u0924\u094d\u0935":"ASSETS \u2014 LIABILITIES"}</div>
+            <div style={{fontSize:"1.6rem",fontWeight:800}}>{fmtFn(Math.abs(balanceDiff))}</div>
+            <div style={{fontSize:"0.7rem",opacity:0.8,marginTop:3}}>{Math.abs(balanceDiff)<1?(lang==="np"?"\u2713 \u0938\u0928\u094d\u0924\u0941\u0932\u093f\u0924":"\u2713 Balanced"):(balanceDiff>0?(lang==="np"?"\u25b2 \u0905\u0924\u093f\u0930\u093f\u0915\u094d\u0924":"\u25b2 Surplus"):(lang==="np"?"\u25bc \u0918\u093e\u091f\u093e":"\u25bc Deficit"))}</div>
           </div>
 
           {/* Assets card */}
           <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",marginBottom:"0.75rem"}}>
             <div style={{background:"linear-gradient(135deg,#065f46,#059669)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:700,fontSize:"0.88rem"}}>🏛️ {lang==="np"?"सम्पत्ति":"Assets"}</span>
+              <span style={{fontWeight:700,fontSize:"0.88rem"}}>\ud83c\udfd7\ufe0f {lang==="np"?"\u0938\u092e\u094d\u092a\u0924\u094d\u0924\u093f":"Assets"}</span>
               <span style={{fontWeight:800,fontSize:"0.95rem"}}>{fmtFn(totalAssets)}</span>
             </div>
             {[
-              {label:lang==="np"?"नगद (Cash)":"Cash",        val:cashAsset,  note:lang==="np"?"नगद किताब":"Cash Book"},
-              {label:lang==="np"?"बैंक (Bank)":"Bank",        val:bankAsset,  note:lang==="np"?"बैंक किताब":"Bank Book"},
-              {label:lang==="np"?"ऋण बाँकी (Loan O/S)":"Loan Outstanding",val:loansAsset,note:lang==="np"?"ऋण लेजर":"Loan Ledger"},
+              {label:lang==="np"?"\u0928\u0917\u0926 (Cash)":"Cash",                        val:cashBal,     note:lang==="np"?"\u0928\u0917\u0926 \u0915\u093f\u0924\u093e\u092c":"Cash Book"},
+              {label:lang==="np"?"\u092c\u0948\u0902\u0915 (Bank)":"Bank",                   val:bankBal,     note:lang==="np"?"\u092c\u0948\u0902\u0915 \u0915\u093f\u0924\u093e\u092c":"Bank Book"},
+              {label:lang==="np"?"\u0943\u0923 \u092c\u093e\u0901\u0915\u0940 (Loan O/S)":"Loan Outstanding",val:totalLoanOut,note:lang==="np"?"\u0943\u0923 \u0932\u0947\u091c\u0930":"Loan Ledger"},
             ].map((r,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #f0fdf4"}}>
                 <div>
@@ -3554,138 +3652,42 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,monthlyIncome,monthly
               </div>
             ))}
             <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#ecfdf5",fontWeight:700,fontSize:"0.9rem"}}>
-              <span style={{color:"#065f46"}}>{lang==="np"?"जम्मा सम्पत्ति":"Total Assets"}</span>
+              <span style={{color:"#065f46"}}>{lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u0938\u092e\u094d\u092a\u0924\u094d\u0924\u093f":"Total Assets"}</span>
               <span style={{color:"#065f46"}}>{fmtFn(totalAssets)}</span>
             </div>
           </div>
 
-          {/* Liabilities card */}
+          {/* Capital & Liabilities card */}
           <div style={{background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden",marginBottom:"0.75rem"}}>
             <div style={{background:"linear-gradient(135deg,#1e40af,#2563eb)",padding:"0.65rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:700,fontSize:"0.88rem"}}>📑 {lang==="np"?"पुँजी तथा दायित्व":"Capital & Liabilities"}</span>
+              <span style={{fontWeight:700,fontSize:"0.88rem"}}>\ud83d\udcdd {lang==="np"?"\u092a\u0941\u0901\u091c\u0940 \u0924\u0925\u093e \u0926\u093e\u092f\u093f\u0924\u094d\u0935":"Capital & Liabilities"}</span>
               <span style={{fontWeight:800,fontSize:"0.95rem"}}>{fmtFn(totalLiabilities)}</span>
             </div>
             {[
-              {label:lang==="np"?"सदस्यको बचत (Members Share)":"Members' Share Capital", val:membersShare, note:lang==="np"?"बचत लेजर":"Savings Ledger"},
-              {label:cumulativeProfit>=0?(lang==="np"?"जोड: नाफा (Add: Profit)":"Add: Profit"):(lang==="np"?"घटाउ: घाटा (Less: Loss)":"Less: Loss"), val:Math.abs(cumulativeProfit), note:lang==="np"?"आय-व्यय":"Income/Expense", profit:cumulativeProfit},
+              {label:lang==="np"?"\u0938\u0926\u0938\u094d\u092f\u0915\u094b \u092c\u091a\u0924 (Members Share)":"Members\' Share Capital",val:membersShare,  note:lang==="np"?"\u092c\u091a\u0924 \u0932\u0947\u091c\u0930":"Savings Ledger",color:"#374151"},
+              {label:profitLoss>=0?(lang==="np"?"\u091c\u094b\u0921\u093c: \u0928\u093e\u092b\u093e":"Add: Profit"):(lang==="np"?"\u0918\u091f\u093e\u0909: \u0918\u093e\u091f\u093e":"Less: Loss"),val:Math.abs(profitLoss),note:lang==="np"?"\u0906\u092f-\u0935\u094d\u092f\u092f":"Income/Expense",color:profitLoss>=0?"#16a34a":"#dc2626"},
             ].map((r,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.6rem 1rem",borderBottom:"1px solid #e0e7ff"}}>
                 <div>
                   <div style={{fontSize:"0.83rem",color:"#374151",fontWeight:500}}>{r.label}</div>
                   <div style={{fontSize:"0.68rem",color:"#9ca3af"}}>{r.note}</div>
                 </div>
-                <span style={{fontWeight:700,color:r.profit!==undefined?(r.profit>=0?"#16a34a":"#dc2626"):"#374151",fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
+                <span style={{fontWeight:700,color:r.color,fontSize:"0.9rem"}}>{fmtFn(r.val)}</span>
               </div>
             ))}
             <div style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",background:"#eff6ff",fontWeight:700,fontSize:"0.9rem"}}>
-              <span style={{color:"#1e40af"}}>{lang==="np"?"जम्मा पुँजी/दायित्व":"Total Capital & Liabilities"}</span>
+              <span style={{color:"#1e40af"}}>{lang==="np"?"\u091c\u092e\u094d\u092e\u093e \u092a\u0941\u0901\u091c\u0940 / \u0926\u093e\u092f\u093f\u0924\u094d\u0935":"Total Capital & Liabilities"}</span>
               <span style={{color:"#1e40af"}}>{fmtFn(totalLiabilities)}</span>
             </div>
           </div>
 
           {/* Balance equation */}
           <div style={{background:Math.abs(balanceDiff)<1?"#f0fdf4":"#fef3c7",borderRadius:"0.75rem",padding:"0.75rem 1rem",border:`1px solid ${Math.abs(balanceDiff)<1?"#bbf7d0":"#fcd34d"}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:700,fontSize:"0.85rem",color:Math.abs(balanceDiff)<1?"#166534":"#92400e"}}>{lang==="np"?"सम्पत्ति = पुँजी + दायित्व":"Assets = Capital + Liabilities"}</span>
-            <span style={{fontWeight:800,color:Math.abs(balanceDiff)<1?"#16a34a":"#d97706",fontSize:"0.88rem"}}>{Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):fmtFn(balanceDiff)}</span>
+            <span style={{fontWeight:700,fontSize:"0.85rem",color:Math.abs(balanceDiff)<1?"#166534":"#92400e"}}>{lang==="np"?"\u0938\u092e\u094d\u092a\u0924\u094d\u0924\u093f = \u092a\u0941\u0901\u091c\u0940 + \u0926\u093e\u092f\u093f\u0924\u094d\u0935":"Assets = Capital + Liabilities"}</span>
+            <span style={{fontWeight:800,color:Math.abs(balanceDiff)<1?"#16a34a":"#d97706",fontSize:"0.88rem"}}>{Math.abs(balanceDiff)<1?(lang==="np"?"\u2713 \u0938\u0928\u094d\u0924\u0941\u0932\u093f\u0924":"\u2713 Balanced"):fmtFn(balanceDiff)}</span>
           </div>
         </div>
       )}
-
-      {/* ══ MONTHLY REPORT TAB ══ */}
-      {subTab==="monthly"&&(
-        <div>
-          {/* Cash Flow quick cards */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.5rem",marginBottom:"0.85rem"}}>
-            {[
-              {label:t.incomeLabel,  val:totalInc,   color:"#16a34a",bg:"#f0fdf4"},
-              {label:t.expenseLabel, val:totalExp,   color:"#dc2626",bg:"#fff7ed"},
-              {label:lang==="np"?"नाफा/घाटा":"Profit/Loss",val:profitLoss,color:profitLoss>=0?"#2563eb":"#dc2626",bg:profitLoss>=0?"#eff6ff":"#fef2f2"},
-            ].map((c,i)=>(
-              <div key={i} style={{background:c.bg,borderRadius:"0.65rem",padding:"0.6rem 0.5rem",textAlign:"center"}}>
-                <div style={{fontSize:"0.6rem",color:"#6b7280",fontWeight:600,marginBottom:2}}>{c.label}</div>
-                <div style={{fontSize:"0.88rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Printable report card */}
-          <div style={{background:"#fff",borderRadius:"1rem",boxShadow:"0 4px 16px rgba(0,0,0,0.08)",overflow:"hidden",marginBottom:"1rem"}}>
-            <div style={{background:"linear-gradient(135deg,#1b5e20,#2e7d32)",padding:"1rem 1.25rem",color:"#fff",textAlign:"center"}}>
-              <div style={{fontSize:"1.05rem",fontWeight:700}}>{t.appName}</div>
-              <div style={{fontSize:"0.78rem",opacity:0.85,marginTop:2}}>{mode==="monthly"?t.monthlyReport:t.yearlyReport} — {period}</div>
-            </div>
-            <div>
-              {[
-                [t.totalSaving,                                       fmtFn(rSaving)],
-                [lang==="np"?"ऋण जारी":"Loan Issued",               fmtFn(rLoanIssued)],
-                [lang==="np"?"साँवा उठान":"Principal Recovered",     fmtFn(rPrincipal)],
-                [t.incomeLabel,                                       fmtFn(totalInc)],
-                [lang==="np"?"बैंक ब्याज":"Bank Interest",           fmtFn(bankInterestAmt)],
-                [t.expenseLabel,                                      fmtFn(totalExp)],
-              ].map(([l,v],i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
-                  <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
-                </div>
-              ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"0.7rem 1rem",background:reportNetBalance>=0?"#1b5e20":"#dc2626",color:"#fff",fontWeight:700,fontSize:"0.95rem"}}>
-                <span>{t.netBalance}</span><span>{fmtFn(reportNetBalance)}</span>
-              </div>
-              <div style={{borderTop:"2px solid #e5e7eb"}}>
-                {[
-                  [t.cashBalance, fmtFn(cashBal)],
-                  [t.bankBalance, fmtFn(bankBal)],
-                  [t.totalMembers+":", members.length],
-                ].map(([l,v],i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"0.65rem 1rem",borderBottom:"1px solid #f3f4f6",fontSize:"0.88rem"}}>
-                    <span style={{color:"#374151"}}>{l}</span><span style={{fontWeight:600}}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{padding:"0.75rem"}}>
-              <div style={{display:"flex",justifyContent:"space-between",padding:"0.75rem 1rem",background:"#1b5e20",color:"#fff",borderRadius:"0.5rem",fontWeight:700,fontSize:"1rem"}}>
-                <span>{lang==="np"?"नेट समूह कोष":"Net Group Fund"}</span><span>{fmtFn(netGroupFund)}</span>
-              </div>
-            </div>
-            <div style={{padding:"0 1rem 1rem"}}>
-              <div style={{fontSize:"0.78rem",color:"#6b7280",marginBottom:"0.5rem",fontWeight:600}}>{lang==="np"?"हस्ताक्षर क्षेत्र":"Signature Area"}</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem"}}>
-                {sigNames.map(x=>(
-                  <div key={x} style={{borderTop:"2px solid #d1d5db",paddingTop:"0.4rem",fontSize:"0.78rem",color:"#6b7280",textAlign:"center"}}>{x}</div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Overall Cumulative Summary ──────────────────────────────────────── */}
-      {(()=>{
-        const allInc=ie.reduce((a,x)=>a+(x.income||0),0);
-        const allBankInt=bank.filter(b=>b.category==="interest").reduce((a,b)=>a+(b.deposit||0),0);
-        const allExp=ie.reduce((a,x)=>a+(x.expense||0),0);
-        const isEn=lang==="en";
-        const cards=[
-          {label:isEn?"Total Income (All Time)":"जम्मा आम्दानी (सुरुदेखि)",   val:allInc,    color:"#16a34a", bg:"#f0fdf4", border:"#bbf7d0"},
-          {label:isEn?"Total Bank Interest (All Time)":"जम्मा बैंक ब्याज",      val:allBankInt,color:"#2563eb", bg:"#eff6ff", border:"#bfdbfe"},
-          {label:isEn?"Total Expense (All Time)":"जम्मा खर्च (सुरुदेखि)",       val:allExp,    color:"#dc2626", bg:"#fef2f2", border:"#fecaca"},
-        ];
-        return(
-          <div style={{marginTop:"1.25rem",background:"#fff",borderRadius:"0.875rem",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",overflow:"hidden"}}>
-            <div style={{background:"linear-gradient(135deg,#374151,#4b5563)",padding:"0.7rem 1rem",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:700,fontSize:"0.88rem"}}>📋 {isEn?"Overall Summary (From Start to Today)":"समग्र सारांश (सुरुदेखि आजसम्म)"}</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:0}}>
-              {cards.map((c,i)=>(
-                <div key={i} style={{background:c.bg,padding:"0.85rem 0.75rem",textAlign:"center",borderRight:i<cards.length-1?`1px solid ${c.border}`:"none"}}>
-                  <div style={{fontSize:"0.65rem",color:"#6b7280",fontWeight:600,marginBottom:"0.35rem",lineHeight:1.3}}>{c.label}</div>
-                  <div style={{fontSize:"0.95rem",fontWeight:800,color:c.color}}>{fmtFn(c.val)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

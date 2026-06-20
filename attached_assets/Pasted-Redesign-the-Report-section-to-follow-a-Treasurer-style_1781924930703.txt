@@ -1,0 +1,76 @@
+Redesign the Report section to follow a Treasurer-style Monthly Financial Report format.
+
+IMPORTANT RULES:
+
+* Do NOT change dashboard, loan, savings, income, expense, cashbook, or bankbook modules
+* Do NOT change Firebase structure
+* Do NOT change existing data
+* Only modify the Report section
+
+CURRENT ISSUE:
+
+* Monthly Report currently filters data by month.
+* Annual Report exists but is not needed.
+* I need a Treasurer-style Monthly Report used by community savings groups in Nepal.
+
+WHAT I WANT:
+
+1. REMOVE ANNUAL REPORT
+
+* Remove the Annual Report section completely.
+* Remove Annual Report tabs, buttons, menus, calculations, and PDF options.
+
+2. KEEP ONLY MONTHLY REPORT
+
+3. MONTHLY REPORT FORMAT
+
+* User can select a month (for report title/reference only).
+* Example:
+  "Monthly Financial Report - 2083 Shrawan"
+
+4. IMPORTANT CALCULATION RULE
+
+The selected month must NOT filter financial totals.
+
+Display cumulative totals from group establishment date up to the current report date:
+
+* Total Savings = All-time total savings
+* Loan Issued = All-time total loan issued
+* Principal Recovered = All-time total principal recovered
+* Income = All-time total income
+* Bank Interest = All-time total bank interest
+* Expense = All-time total expense
+* Cash Balance = Current cash balance
+* Bank Balance = Current bank balance
+* Net Group Fund = Current Cash + Current Bank
+
+5. REPORT PURPOSE
+
+The report should resemble the monthly report normally presented by a Treasurer during a monthly meeting.
+
+The selected month is only used:
+
+* For report heading
+* For PDF title
+* For meeting reference
+
+It must NOT limit or filter cumulative totals.
+
+6. PDF EXPORT
+
+* PDF should use the same Treasurer Monthly Report format.
+* Include selected month in title only.
+
+7. SAFETY
+
+* Do not modify existing financial calculations.
+* Do not modify transaction records.
+* Only change report presentation and filtering behavior.
+
+OUTPUT:
+
+* Annual Report removed.
+* Monthly Report remains.
+* Monthly Report shows all-time cumulative financial totals.
+* Selected month affects only report title/reference.
+* Report matches a real Treasurer monthly presentation format used in Nepali community savings groups.

@@ -1,0 +1,63 @@
+Enhance the Saving Ledger PDF Export in my React + Firebase Financial App.
+
+CRITICAL DATA SAFETY RULES:
+
+* Do NOT modify, delete, overwrite, or migrate any Firebase data.
+* Do NOT change Firebase structure or database paths.
+* Do NOT modify Savings, Loan, Income, Expense, Cashbook, Bankbook, or Member records.
+* Only improve the Saving Ledger PDF export.
+
+CURRENT REQUIREMENT:
+The Saving Ledger PDF should display each member's name together with their cumulative total savings up to the report generation date.
+
+WHAT I WANT:
+
+1. MEMBER SUMMARY TABLE
+   At the beginning of the Saving Ledger PDF, add a summary table with the following columns:
+
+* S.N.
+* Member Name
+* Total Savings (Current Total)
+
+2. TOTAL SAVINGS CALCULATION
+   For each member, calculate:
+
+Total Savings =
+Sum of all valid savings deposits made by that member up to the selected report date.
+
+This must be the cumulative total, not just the selected month's savings.
+
+3. LEDGER DETAILS
+   After the summary table, keep the existing Saving Ledger transaction details exactly as they are.
+   Do not remove or change the existing ledger entries.
+
+4. PDF HEADER
+   Include:
+
+* App Logo (same logo used in the app)
+* App Name
+* Title: "Saving Ledger Report"
+* Report Generated Date & Time
+* Selected Report Period (if applicable)
+
+5. PDF FOOTER
+   Keep the existing signature section unchanged.
+
+6. CONSISTENCY
+
+* The member names must match the Members module.
+* The total savings must match the Savings records shown in the app.
+* Do not create separate calculations for PDF.
+
+7. SAFETY
+
+* Do NOT change savings calculations.
+* Do NOT modify report UI.
+* Do NOT affect Dashboard or Firebase.
+* Only enhance the Saving Ledger PDF export.
+
+EXPECTED RESULT:
+
+* Saving Ledger PDF starts with a summary table showing each member's current total savings.
+* Existing ledger transaction details remain unchanged.
+* PDF is clean, professional, and suitable for meetings and auditing.

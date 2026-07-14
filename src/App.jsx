@@ -2728,7 +2728,30 @@ function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,
   };
   const del=id=>{setSavings(savings.filter(s=>s.id!==id));};
   const cols=[{key:"dateDisp",label:t.date},{key:"memberName",label:t.member},{key:"particulars",label:t.particulars,wrap:true},{key:"deposit",label:t.deposit,fmt:true,num:true,green:true},{key:"withdraw",label:t.withdraw,fmt:true,num:true,red:true},{key:"balance",label:t.balance,fmt:true,num:true},{key:"signature",label:t.signature}];
-  const printHTML=`<table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+
+  // Member summary: cumulative totals from ALL savings records (not just filtered view)
+  const memberSummaryRows=members.map((m,i)=>{
+    const ms=savings.filter(s=>s.memberId===m.id);
+    const total=ms.reduce((sum,s)=>sum+(s.deposit||0)-(s.withdraw||0),0);
+    return{sn:i+1,name:getMemberDisplayName(m,lang),total,has:ms.length>0};
+  }).filter(r=>r.has);
+  const summaryGrandTotal=memberSummaryRows.reduce((s,r)=>s+r.total,0);
+
+  const printHTML=`
+    <h3 style="margin:0 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"सदस्य बचत सारांश":"Member Savings Summary"}</h3>
+    <table>
+      <thead><tr>
+        <th style="width:3em">${lang==="np"?"क्र.सं.":"S.N."}</th>
+        <th>${lang==="np"?"सदस्यको नाम":"Member Name"}</th>
+        <th style="text-align:right">${lang==="np"?"कुल बचत (रू)":"Total Savings (Rs.)"}</th>
+      </tr></thead>
+      <tbody>
+        ${memberSummaryRows.map(r=>`<tr><td>${r.sn}</td><td>${r.name}</td><td style="text-align:right">${fmtFn(r.total)}</td></tr>`).join("")}
+        <tr class="total-row"><td colspan="2">${lang==="np"?"जम्मा":"Grand Total"}</td><td style="text-align:right">${fmtFn(summaryGrandTotal)}</td></tr>
+      </tbody>
+    </table>
+    <h3 style="margin:1.75rem 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"बचत कारोबार विवरण":"Savings Ledger Details"}</h3>
+    <table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
 
   return(

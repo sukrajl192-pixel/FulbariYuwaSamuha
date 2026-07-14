@@ -1,0 +1,88 @@
+Enhance ONLY the Saving Ledger PDF Export for Member Search mode.
+
+CRITICAL DATA SAFETY RULES:
+
+* Do NOT modify, delete, overwrite, or migrate any Firebase data.
+* Do NOT change Firebase database structure or paths.
+* Do NOT modify Savings calculations or transaction records.
+* Do NOT change the existing Saving Ledger screen.
+* Only update the PDF export behavior.
+
+CURRENT BEHAVIOR:
+
+* When no member is selected, the Saving Ledger PDF correctly exports the complete group summary.
+* I want to KEEP this behavior exactly as it is.
+
+NEW REQUIREMENT:
+
+When a specific member is selected using the Member Search filter, the PDF Download must export ONLY that selected member's Saving Ledger.
+
+IMPLEMENTATION RULES:
+
+1. NO MEMBER SELECTED
+
+* Keep the current PDF exactly as it is.
+* Export the complete group Saving Summary.
+* Do not change anything.
+
+2. MEMBER SELECTED
+   If a member is selected from the search/filter:
+
+The PDF must contain ONLY that member's information.
+
+Include:
+
+* App Logo
+* App Name
+* Title: "Member Saving Ledger"
+* Member Name
+* Report Generation Date & Time
+
+Then display ONLY the selected member's saving transactions.
+
+Columns:
+
+* Date
+* Particulars
+* Deposit Amount
+* Withdrawal Amount (if applicable)
+* Balance (if applicable)
+
+At the bottom, display:
+
+Member Summary
+
+* Total Savings
+* Total Withdrawals (if applicable)
+* Current Total Savings Balance
+
+3. FILTER RULE
+   The PDF must use the currently filtered data shown on the screen.
+
+If only one member is visible,
+export only that member.
+
+Do NOT include any other members.
+
+4. PDF CONSISTENCY
+   The PDF must exactly match the filtered Saving Ledger currently displayed on screen.
+
+5. SAFETY
+
+* Do NOT modify savings data.
+* Do NOT modify report calculations.
+* Do NOT affect Dashboard.
+* Do NOT change Firebase.
+* Only change the PDF export behavior depending on whether a member filter is active.
+
+EXPECTED RESULT:
+
+Case 1:
+No member selected
+→ Export complete group Saving Summary (current behavior).
+
+Case 2:
+One member selected
+→ Export only that member's Saving Ledger and summary.
+
+Automatically detect whether a member filter is active and export the correct PDF accordingly.

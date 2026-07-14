@@ -2737,20 +2737,57 @@ function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,
   }).filter(r=>r.has);
   const summaryGrandTotal=memberSummaryRows.reduce((s,r)=>s+r.total,0);
 
-  const printHTML=`
-    <h3 style="margin:0 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"सदस्य बचत सारांश":"Member Savings Summary"}</h3>
-    <table>
-      <thead><tr>
-        <th style="width:3em">${lang==="np"?"क्र.सं.":"S.N."}</th>
-        <th>${lang==="np"?"सदस्यको नाम":"Member Name"}</th>
-        <th style="text-align:right">${lang==="np"?"कुल बचत (रू)":"Total Savings (Rs.)"}</th>
-      </tr></thead>
-      <tbody>
-        ${memberSummaryRows.map(r=>`<tr><td>${r.sn}</td><td>${r.name}</td><td style="text-align:right">${fmtFn(r.total)}</td></tr>`).join("")}
-        <tr class="total-row"><td colspan="2">${lang==="np"?"जम्मा":"Grand Total"}</td><td style="text-align:right">${fmtFn(summaryGrandTotal)}</td></tr>
-      </tbody>
-    </table>
-    `;
+  // Member ledger columns (no Member Name col — single-member view)
+  const memberLedgerCols=[
+    {key:"dateDisp",label:t.date},
+    {key:"particulars",label:t.particulars},
+    {key:"deposit",label:t.deposit},
+    {key:"withdraw",label:t.withdraw},
+    {key:"balance",label:t.balance},
+  ];
+  const memberNetBal=memberDeposits-memberWithdrawals;
+
+  // PDF content branches on whether a member filter is active
+  const printTitle=filterMember
+    ?(lang==="np"?"सदस्य बचत खाता":"Member Saving Ledger")
+    :t.saving;
+
+  const printHTML=filterMember
+    // ── Single-member ledger ──────────────────────────────────────────────────
+    ?`<p style="margin:0 0 1rem;font-size:0.92rem;color:#374151">
+        <strong>${lang==="np"?"सदस्य":"Member"}:</strong> ${selMemberName}
+      </p>
+      <table>
+        <thead><tr>${memberLedgerCols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr>${memberLedgerCols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+      <h3 style="margin:1.75rem 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"बचत सारांश":"Savings Summary"}</h3>
+      <table>
+        <thead><tr>
+          <th>${lang==="np"?"विवरण":"Particulars"}</th>
+          <th style="text-align:right">${lang==="np"?"रकम (रू)":"Amount (Rs.)"}</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>${lang==="np"?"कुल जम्मा":"Total Deposits"}</td><td style="text-align:right">${fmtFn(memberDeposits)}</td></tr>
+          <tr><td>${lang==="np"?"कुल निकासी":"Total Withdrawals"}</td><td style="text-align:right">${fmtFn(memberWithdrawals)}</td></tr>
+          <tr class="total-row"><td>${lang==="np"?"हालको बचत मौज्दात":"Current Savings Balance"}</td><td style="text-align:right">${fmtFn(memberNetBal)}</td></tr>
+        </tbody>
+      </table>`
+    // ── Group summary (unchanged) ─────────────────────────────────────────────
+    :`<h3 style="margin:0 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"सदस्य बचत सारांश":"Member Savings Summary"}</h3>
+      <table>
+        <thead><tr>
+          <th style="width:3em">${lang==="np"?"क्र.सं.":"S.N."}</th>
+          <th>${lang==="np"?"सदस्यको नाम":"Member Name"}</th>
+          <th style="text-align:right">${lang==="np"?"कुल बचत (रू)":"Total Savings (Rs.)"}</th>
+        </tr></thead>
+        <tbody>
+          ${memberSummaryRows.map(r=>`<tr><td>${r.sn}</td><td>${r.name}</td><td style="text-align:right">${fmtFn(r.total)}</td></tr>`).join("")}
+          <tr class="total-row"><td colspan="2">${lang==="np"?"जम्मा":"Grand Total"}</td><td style="text-align:right">${fmtFn(summaryGrandTotal)}</td></tr>
+        </tbody>
+      </table>`;
   const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
 
   return(
@@ -2758,7 +2795,7 @@ function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>💰 {t.saving}</h2>
         <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
-          <Btn onClick={()=>exportPrint(t.saving,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
+          <Btn onClick={()=>exportPrint(printTitle,printHTML)} color="#dc2626" icon="download">{t.pdf}</Btn>
           <Btn onClick={()=>exportCSV(t.saving,cols,rows)} color="#16a34a" icon="excel">{t.csv}</Btn>
           {isAdmin&&<Btn onClick={()=>{setForm(blank);setModal("add");}} icon="plus">{t.add}</Btn>}
         </div>

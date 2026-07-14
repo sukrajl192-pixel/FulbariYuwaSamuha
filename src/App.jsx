@@ -2925,14 +2925,17 @@ function LoanLedger({loans,setLoans,loanPayments,setLoanPayments,members,memberO
     {key:"principalPaid",label:t.principalPaid},{key:"interestPaid",label:t.interestPaid},{key:"lateFee",label:t.lateFee},
     {key:"remaining",label:t.remaining},{key:"status",label:isEn?"Status":"\u0938\u094d\u0925\u093f\u0924\u093f"},
   ];
-  // Overall Loan Summary — grand totals from ALL loans/payments (not filtered view)
-  const _allLoans=loans||[];
-  const _allPmts=loanPayments||[];
-  const _totalIssued=_allLoans.reduce((s,l)=>s+(l.principal||l.loanAmount||0),0);
-  const _totalPrincipal=_allPmts.reduce((s,p)=>s+(p.principalPaid||0),0);
-  const _totalInterest=_allPmts.reduce((s,p)=>s+(p.interestPaid||0),0);
-  const _totalLateFee=_allPmts.reduce((s,p)=>s+(p.lateFee||0),0);
-  const _totalOutstanding=Math.max(0,_totalIssued-_totalPrincipal);
+  // Overall Loan Summary — sums computed row-by-row from filteredLoans using the
+  // exact same logic as flatRows, so totals == column sums of the visible PDF table.
+  const _pmts=loanPayments||[];
+  const _totalIssued=filteredLoans.reduce((s,l)=>s+(l.principal||l.loanAmount||0),0);
+  const _totalPrincipal=filteredLoans.reduce((s,l)=>s+_pmts.filter(p=>p.loanId===l.id).reduce((ps,p)=>ps+(p.principalPaid||0),0),0);
+  const _totalInterest=filteredLoans.reduce((s,l)=>s+_pmts.filter(p=>p.loanId===l.id).reduce((ps,p)=>ps+(p.interestPaid||0),0),0);
+  const _totalLateFee=filteredLoans.reduce((s,l)=>s+_pmts.filter(p=>p.loanId===l.id).reduce((ps,p)=>ps+(p.lateFee||0),0),0);
+  const _totalOutstanding=filteredLoans.reduce((s,l)=>{
+    const paid=_pmts.filter(p=>p.loanId===l.id).reduce((ps,p)=>ps+(p.principalPaid||0),0);
+    return s+Math.max(0,(l.principal||0)-paid);
+  },0);
 
   const _summaryLabel=isEn?"Overall Loan Summary":"समग्र ऋण सारांश";
   const _summaryRows=[

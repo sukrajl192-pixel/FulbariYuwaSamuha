@@ -2750,8 +2750,7 @@ function SavingLedger({savings,setSavings,loans,members,memberOptions,getMember,
         <tr class="total-row"><td colspan="2">${lang==="np"?"जम्मा":"Grand Total"}</td><td style="text-align:right">${fmtFn(summaryGrandTotal)}</td></tr>
       </tbody>
     </table>
-    <h3 style="margin:1.75rem 0 0.6rem;color:#1b5e20;font-size:1rem">${lang==="np"?"बचत कारोबार विवरण":"Savings Ledger Details"}</h3>
-    <table><thead><tr>${cols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    `;
   const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
 
   return(

@@ -2925,7 +2925,37 @@ function LoanLedger({loans,setLoans,loanPayments,setLoanPayments,members,memberO
     {key:"principalPaid",label:t.principalPaid},{key:"interestPaid",label:t.interestPaid},{key:"lateFee",label:t.lateFee},
     {key:"remaining",label:t.remaining},{key:"status",label:isEn?"Status":"\u0938\u094d\u0925\u093f\u0924\u093f"},
   ];
-  const printHTML=`<table><thead><tr>${printCols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${flatRows.map(r=>`<tr>${printCols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  // Overall Loan Summary — grand totals from ALL loans/payments (not filtered view)
+  const _allLoans=loans||[];
+  const _allPmts=loanPayments||[];
+  const _totalIssued=_allLoans.reduce((s,l)=>s+(l.principal||l.loanAmount||0),0);
+  const _totalPrincipal=_allPmts.reduce((s,p)=>s+(p.principalPaid||0),0);
+  const _totalInterest=_allPmts.reduce((s,p)=>s+(p.interestPaid||0),0);
+  const _totalLateFee=_allPmts.reduce((s,p)=>s+(p.lateFee||0),0);
+  const _totalOutstanding=Math.max(0,_totalIssued-_totalPrincipal);
+
+  const _summaryLabel=isEn?"Overall Loan Summary":"समग्र ऋण सारांश";
+  const _summaryRows=[
+    [isEn?"Total Loan Issued":"कुल ऋण जारी",          fmtFn(_totalIssued)],
+    [isEn?"Total Principal Recovered":"कुल साँवा उठान", fmtFn(_totalPrincipal)],
+    [isEn?"Total Interest Received":"कुल ब्याज प्राप्त",  fmtFn(_totalInterest)],
+    [isEn?"Total Late Fees Collected":"कुल ढिलाई शुल्क",  fmtFn(_totalLateFee)],
+    [isEn?"Total Outstanding Loan":"कुल बाँकी ऋण",      fmtFn(_totalOutstanding)],
+  ];
+  const _overallSummaryHTML=`
+    <h3 style="margin:2rem 0 0.6rem;color:#1b5e20;font-size:1rem;border-top:2px solid #1b5e20;padding-top:1rem">${_summaryLabel}</h3>
+    <table>
+      <thead><tr>
+        <th>${isEn?"Particulars":"विवरण"}</th>
+        <th style="text-align:right">${isEn?"Amount (Rs.)":"रकम (रू)"}</th>
+      </tr></thead>
+      <tbody>
+        ${_summaryRows.slice(0,4).map(([l,v])=>`<tr><td>${l}</td><td style="text-align:right">${v}</td></tr>`).join("")}
+        <tr class="total-row"><td>${_summaryRows[4][0]}</td><td style="text-align:right">${_summaryRows[4][1]}</td></tr>
+      </tbody>
+    </table>`;
+
+  const printHTML=`<table><thead><tr>${printCols.map(c=>`<th>${c.label}</th>`).join("")}</tr></thead><tbody>${flatRows.map(r=>`<tr>${printCols.map(c=>`<td>${r[c.key]??""}</td>`).join("")}</tr>`).join("")}</tbody></table>${_overallSummaryHTML}`;
   const srchStyle={width:"100%",padding:"0.55rem 2.2rem 0.55rem 0.75rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontSize:"0.85rem",fontFamily:"inherit",boxSizing:"border-box",outline:"none",background:"#fff"};
 
   return(

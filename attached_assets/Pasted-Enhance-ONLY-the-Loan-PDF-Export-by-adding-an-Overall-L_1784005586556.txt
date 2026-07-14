@@ -1,0 +1,80 @@
+Enhance ONLY the Loan PDF Export by adding an Overall Loan Summary section.
+
+CRITICAL DATA SAFETY RULES:
+
+* Do NOT modify, delete, overwrite, or migrate any Firebase data.
+* Do NOT change Firebase database structure or paths.
+* Do NOT modify Loan calculations or transaction records.
+* Do NOT change the Loan screen UI.
+* Only enhance the Loan PDF export.
+
+CURRENT REQUIREMENT:
+The Loan PDF already displays member loan details correctly.
+
+I want an additional summary section at the end of the PDF that shows cumulative totals for ALL MEMBERS as of the report generation date.
+
+WHAT I WANT:
+
+1. KEEP THE EXISTING PDF
+
+* Keep the current member-wise loan table exactly as it is.
+* Do not remove or modify any existing information.
+
+2. ADD AN "OVERALL LOAN SUMMARY" SECTION
+   At the bottom of the PDF, after the member-wise table, add a summary box titled:
+
+"Overall Loan Summary"
+
+3. CALCULATE TOTALS FOR ALL MEMBERS
+
+Display the following totals using ALL loan records up to the report generation date:
+
+* Total Loan Issued
+  = Sum of all loan amounts issued to all members.
+
+* Total Principal Recovered
+  = Sum of all principal repayments received from all members.
+
+* Total Interest Received
+  = Sum of all loan interest payments received from all members.
+
+* Total Late Fees Collected
+  = Sum of all loan late fees collected from all members.
+
+* Total Outstanding Loan
+  = Total Loan Issued − Total Principal Recovered
+
+IMPORTANT:
+
+* These are GRAND TOTALS across every member.
+* Do NOT calculate per member.
+* Use all loan records up to the report generation date.
+* Do not include deleted or invalid transactions.
+
+4. PDF LAYOUT
+
+* Add the summary in a clean bordered table.
+* Align currency values properly.
+* Use the same formatting as the rest of the PDF.
+
+5. PDF HEADER & FOOTER
+
+* Keep the existing logo, title, and signature section unchanged.
+
+6. SAFETY
+
+* Do NOT modify loan data.
+* Do NOT modify Firebase.
+* Do NOT change loan calculations used elsewhere in the app.
+* Only add this summary section to the PDF export.
+
+EXPECTED RESULT:
+The Loan PDF remains unchanged except that, at the bottom, it includes an "Overall Loan Summary" showing:
+
+* Total Loan Issued
+* Total Principal Recovered
+* Total Interest Received
+* Total Late Fees Collected
+* Total Outstanding Loan
+
+These totals must represent the combined totals of ALL MEMBERS as of the report generation date.

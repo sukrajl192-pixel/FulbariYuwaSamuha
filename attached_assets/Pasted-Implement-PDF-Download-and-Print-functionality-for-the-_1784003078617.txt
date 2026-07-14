@@ -1,0 +1,72 @@
+Implement PDF Download and Print functionality for the Assets Report in my React + Firebase Financial App.
+
+CRITICAL DATA SAFETY RULES:
+
+* Do NOT delete, modify, overwrite, or migrate any Firebase data.
+* Do NOT change Firebase database structure or paths.
+* Do NOT modify Loan, Savings, Income, Expense, Cashbook, Bankbook, or Member data.
+* Do NOT change any financial calculations.
+* Only add PDF Export and Print functionality for the existing Assets Report.
+
+CURRENT SITUATION:
+
+* The Report section already displays the Assets information correctly on screen.
+* However, there is no option to download or print the Assets Report.
+
+WHAT I WANT:
+
+1. ADD TWO NEW ACTION BUTTONS
+   In the Assets Report section, add:
+
+* Download PDF
+* Print
+
+2. PDF EXPORT
+   The exported PDF must include exactly the same Assets Report that is displayed on the screen.
+
+Include:
+
+* App Logo (same logo used throughout the app)
+* App Name
+* Report Title: "Assets Report"
+* Report generation date and time
+* Selected reporting period (if applicable)
+* All Asset items and their values
+* Total Assets
+* Capital & Liabilities section (if already displayed with the Assets Report)
+* Assets = Capital + Liabilities summary (if available)
+* Signature section (same format used in other financial reports)
+
+3. PRINT FUNCTION
+   The Print button must print the same Assets Report with the same formatting used in the PDF.
+
+4. CONSISTENCY
+
+* The PDF and Print versions must exactly match the on-screen Assets Report.
+* Use the same calculations, values, formatting, and ordering.
+* Do not create separate calculations for PDF.
+
+5. DESIGN
+
+* Use A4 portrait layout.
+* Keep the report clean, professional, and suitable for official meetings and auditing.
+* Ensure page breaks are handled properly if the report is long.
+
+6. DATA SOURCE
+
+* Read the existing Assets Report data only.
+* Do NOT recalculate values.
+* Do NOT fetch from a different source.
+* The PDF and Print must use the same data already displayed on the screen.
+
+7. SAFETY
+
+* Do NOT modify any existing report logic.
+* Do NOT affect Dashboard, Loan, Savings, Income, Expense, or Firebase.
+* Only add PDF Download and Print functionality for the existing Assets Report.
+
+EXPECTED RESULT:
+
+* The Assets Report has working "Download PDF" and "Print" buttons.
+* The exported PDF and printed report exactly match the Assets Report displayed in the app.
+* No existing functionality or data is changed.

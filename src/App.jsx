@@ -3788,6 +3788,79 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,totalFund,members,sav
     </tbody></table>
     <div class="sig-area">${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}</div>`;
 
+  // ── Assets Report HTML (for PDF download & Print) ──────────────────────────
+  const balanceTitle=lang==="np"?"सम्पत्ति प्रतिवेदन":"Assets Report";
+  const balancePrintHTML=`
+    <h2 style="margin-bottom:0.25rem">${balanceTitle}</h2>
+    <p style="font-size:0.85em;color:#555;margin-top:-0.25rem;margin-bottom:0.5rem">${period}</p>
+    <table>
+      <thead><tr>
+        <th>${lang==="np"?"विवरण":"Particulars"}</th>
+        <th style="text-align:right">${lang==="np"?"रकम (रू)":"Amount (Rs.)"}</th>
+      </tr></thead>
+      <tbody>
+        <tr><th colspan="2" style="text-align:left;background:#e8f5e9;padding:6px 10px">${lang==="np"?"सम्पत्ति":"Assets"}</th></tr>
+        <tr><td>${lang==="np"?"नगद (Cash)":"Cash"}<br/><small style="color:#9ca3af;font-size:0.78em">${lang==="np"?"नगद किताब":"Cash Book"}</small></td><td style="text-align:right">${fmtFn(cashBal)}</td></tr>
+        <tr><td>${lang==="np"?"बैंक (Bank)":"Bank"}<br/><small style="color:#9ca3af;font-size:0.78em">${lang==="np"?"बैंक किताब":"Bank Book"}</small></td><td style="text-align:right">${fmtFn(bankBal)}</td></tr>
+        <tr><td>${lang==="np"?"ऋण बाँकी (Loan O/S)":"Loan Outstanding"}<br/><small style="color:#9ca3af;font-size:0.78em">${lang==="np"?"ऋण लेजर":"Loan Ledger"}</small></td><td style="text-align:right">${fmtFn(totalLoanOut)}</td></tr>
+        <tr class="total-row"><td>${lang==="np"?"जम्मा सम्पत्ति":"Total Assets"}</td><td style="text-align:right">${fmtFn(totalAssets)}</td></tr>
+        <tr><th colspan="2" style="text-align:left;background:#e3f2fd;padding:6px 10px">${lang==="np"?"पुँजी तथा दायित्व":"Capital & Liabilities"}</th></tr>
+        <tr><td>${lang==="np"?"सदस्यको बचत (Members Share)":"Members' Share Capital"}<br/><small style="color:#9ca3af;font-size:0.78em">${lang==="np"?"बचत लेजर":"Savings Ledger"}</small></td><td style="text-align:right">${fmtFn(membersShare)}</td></tr>
+        <tr><td style="color:${profitLoss>=0?"#16a34a":"#dc2626"}">${profitLoss>=0?(lang==="np"?"जोड: नाफा":"Add: Profit"):(lang==="np"?"घटाउ: घाटा":"Less: Loss")}<br/><small style="color:#9ca3af;font-size:0.78em">${lang==="np"?"आय-व्यय":"Income/Expense"}</small></td><td style="text-align:right;color:${profitLoss>=0?"#16a34a":"#dc2626"}">${fmtFn(Math.abs(profitLoss))}</td></tr>
+        <tr class="total-row"><td>${lang==="np"?"जम्मा पुँजी / दायित्व":"Total Capital & Liabilities"}</td><td style="text-align:right">${fmtFn(totalLiabilities)}</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:1.25rem;padding:0.75rem 1rem;border:1.5px solid ${Math.abs(balanceDiff)<1?"#bbf7d0":"#fcd34d"};border-radius:0.5rem;background:${Math.abs(balanceDiff)<1?"#f0fdf4":"#fef3c7"};display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:700;color:${Math.abs(balanceDiff)<1?"#166534":"#92400e"}">${lang==="np"?"सम्पत्ति = पुँजी + दायित्व":"Assets = Capital + Liabilities"}</span>
+      <span style="font-weight:800;color:${Math.abs(balanceDiff)<1?"#16a34a":"#d97706"}">${Math.abs(balanceDiff)<1?(lang==="np"?"✓ सन्तुलित":"✓ Balanced"):fmtFn(balanceDiff)}</span>
+    </div>
+    <div class="sig-area">${sigNames.map(n=>`<div class="sig-line">${n}</div>`).join("")}</div>`;
+
+  // Direct browser print for Assets Report
+  const printBalanceDirect=()=>{
+    const date=new Date();
+    const dateNP=date.toLocaleDateString("ne-NP");
+    const dateEN=date.toLocaleDateString("en-GB");
+    const fullHTML=`<!DOCTYPE html>
+<html lang="ne">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${balanceTitle}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Sanskrit&family=Poppins:wght@400;600;700&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Tiro Devanagari Sanskrit','Mangal','Poppins',sans-serif;padding:2cm 2.5cm;font-size:13px;color:#111;background:#fff;}
+    .header{text-align:center;margin-bottom:1.5rem;border-bottom:3px solid #1b5e20;padding-bottom:1rem;}
+    .org{font-size:1.5rem;font-weight:700;color:#1b5e20;font-family:'Poppins',sans-serif;}
+    .report-title{font-size:1rem;color:#444;margin-top:0.4rem;}
+    table{width:100%;border-collapse:collapse;margin-top:1.2rem;}
+    thead tr{background:#1b5e20;color:#fff;}
+    th{padding:8px 10px;text-align:left;font-weight:600;font-size:0.82rem;}
+    td{padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:0.82rem;}
+    tr:nth-child(even) td{background:#f0fdf4;}
+    .total-row td{font-weight:700;background:#dcfce7!important;color:#166534;border-top:2px solid #16a34a;}
+    .footer{text-align:center;margin-top:2rem;color:#888;font-size:0.75rem;border-top:1px solid #e5e7eb;padding-top:0.75rem;}
+    .sig-area{margin-top:2.5rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:2rem;}
+    .sig-line{border-top:1.5px solid #374151;padding-top:0.4rem;font-size:0.82rem;color:#555;text-align:center;}
+    @media print{body{padding:1cm 1.5cm;}@page{size:A4 portrait;margin:1.5cm;}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="${LOGO_SRC}" alt="Logo" style="width:64px;height:64px;object-fit:cover;border-radius:50%;margin-bottom:0.5rem;"/>
+    <div class="org">फुलबारी युवा समूह</div>
+    <div class="report-title">${balanceTitle}</div>
+  </div>
+  ${balancePrintHTML}
+  <div class="footer">फुलबारी युवा समूह &nbsp;•&nbsp; ${dateNP} &nbsp;•&nbsp; ${dateEN}</div>
+</body>
+</html>`;
+    try{
+      const w=window.open("","_blank");
+      if(w){w.document.write(fullHTML);w.document.close();w.focus();setTimeout(()=>w.print(),600);}
+    }catch(e){exportPrint(balanceTitle,balancePrintHTML);}
+  };
+
   const selSt={padding:"0.4rem 0.65rem",border:"1.5px solid #d1d5db",borderRadius:"0.5rem",fontFamily:"inherit",fontSize:"0.82rem",background:"#fff",outline:"none"};
 
   const subTabs=[
@@ -3811,6 +3884,12 @@ function Reports({totalSaving,totalLoanOut,cashBal,bankBal,totalFund,members,sav
         <h2 style={{color:"#1b5e20",margin:0,fontSize:"1.1rem"}}>\ud83d\udcc4 {t.report}</h2>
         {subTab==="monthly"&&(
           <Btn onClick={()=>exportPrint(reportTitle,printHTML)} color="#dc2626" icon="download">{t.print}</Btn>
+        )}
+        {subTab==="balance"&&(
+          <div style={{display:"flex",gap:"0.4rem"}}>
+            <Btn onClick={()=>exportPrint(balanceTitle,balancePrintHTML)} color="#dc2626" icon="download">{lang==="np"?"PDF डाउनलोड":"Download PDF"}</Btn>
+            <Btn onClick={printBalanceDirect} color="#1e40af" icon="report">{lang==="np"?"प्रिन्ट":"Print"}</Btn>
+          </div>
         )}
       </div>
 
